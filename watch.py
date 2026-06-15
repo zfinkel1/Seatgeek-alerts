@@ -114,16 +114,17 @@ def evaluate(row, listings):
     thr = float(row["threshold"])
     typ = row.get("type", "$").strip().lower()
     if typ == "%":
-        # "deal" mode: alert when a ticket is thr% below the TYPICAL (median) price
-        # of the watched section(s). Apples-to-apples within the section, and median
-        # (not average) so suite/outlier prices don't poison the reference point —
-        # a single underpriced listing genuinely stands out.
-        prices = sorted(L["price"] for L in candidates)
-        n = len(prices)
-        median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
-        limit = median * (1 - thr / 100.0)
-    else:
-        limit = thr
+        # "deal" mode: fire only when the single CHEAPEST listing sits thr% below
+        # the 2nd cheapest — i.e. someone genuinely underpriced it, a real gap at
+        # the bottom. Comparing only cheapest-vs-next avoids flagging a whole normal
+        # price tier (e.g. the cheap half of a section that's 20% under the premium
+        # half). Quiet on a smooth range; fires on a true standout.
+        s = sorted(candidates, key=lambda L: L["price"])
+        if len(s) >= 2 and s[0]["price"] <= s[1]["price"] * (1 - thr / 100.0):
+            limit = s[1]["price"] * (1 - thr / 100.0)
+            return [s[0]], limit, candidates
+        return [], None, candidates  # cheapest isn't a standout -> stay quiet
+    limit = thr
     matches = sorted([L for L in candidates if L["price"] <= limit], key=lambda L: L["price"])
     return matches, limit, candidates
 
