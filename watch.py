@@ -21,9 +21,17 @@ import os
 import re
 import csv
 import io
+import sys
 import json
 import time
 import urllib.request
+
+# Windows consoles default to cp1252 and choke on emoji in our log lines;
+# force UTF-8 so a print never crashes the run (no-op on Linux/Actions).
+try:
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+except Exception:
+    pass
 
 from scrape import get_listings
 from alerts import send_alert
@@ -38,6 +46,11 @@ _INTERVALS = {
     "daily": 86400, "24h": 86400,
 }
 DEFAULT_INTERVAL = 1800  # 30 min if "every" is blank/unrecognized
+
+# Never send more than this many alerts per event per check (cheapest first).
+# Prevents a flood when many listings sit under the threshold — you only care
+# about the best deals, not every seat. Override via env if you ever want more.
+MAX_ALERTS = int(os.environ.get("MAX_ALERTS_PER_CHECK", "3"))
 
 
 def parse_interval(s):
@@ -144,12 +157,19 @@ def main():
         cheapest = min(candidates, key=lambda L: L["price"]) if candidates else None
         if cheapest:
             print(f"   cheapest watched: {cheapest['section']} ${cheapest['price']:.0f}  (limit ${limit:.0f})")
+        sent = 0
         for L in matches:
             if L["id"] in alerted:
                 continue
-            print(f"   🔔 ALERT {L['section']} ${L['price']:.0f}")
-            send_alert(label, row["url"], L, limit)
+            if sent < MAX_ALERTS:
+                print(f"   ALERT {L['section']} ${L['price']:.0f}")
+                send_alert(label, row["url"], L, limit)
+                sent += 1
+            # mark seen even when not sent, so a big match-set never floods:
+            # you get the cheapest MAX, the rest are recorded silently.
             est["alerted"].append(L["id"])
+        if sent:
+            print(f"   sent {sent} alert(s) (cheapest first, capped at {MAX_ALERTS})")
         # prune alerted ids no longer present so a re-listing re-alerts
         present = {L["id"] for L in candidates}
         est["alerted"] = [i for i in est["alerted"] if i in present]
