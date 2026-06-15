@@ -1,0 +1,39 @@
+name: SeatGeek Watch
+
+on:
+  schedule:
+    - cron: "*/5 * * * *"   # every 5 min (per-event throttling handled in code)
+  workflow_dispatch:          # lets you run it manually from the Actions tab
+
+permissions:
+  contents: write             # so it can commit state.json back
+
+concurrency:
+  group: seatgeek-watch
+  cancel-in-progress: false   # don't kill a run mid-scrape
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - name: Run watcher
+        env:
+          BRIGHTDATA_BROWSER_WSS: ${{ secrets.BRIGHTDATA_BROWSER_WSS }}
+          SENDGRID_API_KEY: ${{ secrets.SENDGRID_API_KEY }}
+          ALERT_EMAIL: ${{ secrets.ALERT_EMAIL }}
+          ALERT_PHONE: ${{ secrets.ALERT_PHONE }}
+          FROM_EMAIL: ${{ secrets.FROM_EMAIL }}
+          SHEET_CSV_URL: ${{ secrets.SHEET_CSV_URL }}
+        run: python watch.py
+      - name: Persist state
+        run: |
+          git config user.name "seatgeek-bot"
+          git config user.email "bot@users.noreply.github.com"
+          git add state.json || true
+          git commit -m "update state [skip ci]" || echo "no state changes"
+          git push || echo "push skipped"

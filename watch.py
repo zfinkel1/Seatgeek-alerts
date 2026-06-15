@@ -1,0 +1,147 @@
+"""
+SeatGeek price-drop watcher.
+
+Reads a watchlist (Google Sheet published as CSV, or local watchlist.csv), and for
+each event that's "due" (per its own check-interval) pulls live listings via the
+Bright Data Browser API, checks them against the threshold, and fires email/text
+alerts for new qualifying listings (deduped so you're pinged once per ticket).
+
+State (per-event last-checked + already-alerted listing ids) lives in state.json,
+committed back by the GitHub Action so throttling + dedup survive between runs.
+
+Watchlist columns (case-insensitive headers):
+    url        SeatGeek event URL (required)
+    section    section to watch; BLANK = cheapest across all sections
+    threshold  number
+    type       "$" (flat dollars) or "%" (this much below the avg price)
+    every      check interval: 5min|15min|30min|1h|2h|6h|12h|daily  (blank = 30min)
+    active     "no"/"false" to pause a row (anything else = on)
+"""
+import os
+import re
+import csv
+import io
+import json
+import time
+import urllib.request
+
+from scrape import get_listings
+from alerts import send_alert
+
+STATE_FILE = "state.json"
+SHEET_CSV_URL = os.environ.get("SHEET_CSV_URL")   # published Google Sheet CSV url
+LOCAL_WATCHLIST = "watchlist.csv"
+
+_INTERVALS = {
+    "5min": 300, "10min": 600, "15min": 900, "30min": 1800,
+    "1h": 3600, "2h": 7200, "3h": 10800, "6h": 21600, "12h": 43200,
+    "daily": 86400, "24h": 86400,
+}
+DEFAULT_INTERVAL = 1800  # 30 min if "every" is blank/unrecognized
+
+
+def parse_interval(s):
+    s = (s or "").strip().lower().replace(" ", "")
+    return _INTERVALS.get(s, DEFAULT_INTERVAL)
+
+
+def event_id(url):
+    m = re.search(r"/(?:concert|event|tickets)?/?(\d{6,})", url) or re.search(r"(\d{6,})", url)
+    return m.group(1) if m else url.strip()
+
+
+def load_watchlist():
+    text = None
+    if SHEET_CSV_URL:
+        try:
+            with urllib.request.urlopen(SHEET_CSV_URL, timeout=30) as r:
+                text = r.read().decode("utf-8", "replace")
+        except Exception as e:
+            print(f"[watchlist] sheet fetch failed ({e}); falling back to {LOCAL_WATCHLIST}")
+    if text is None and os.path.exists(LOCAL_WATCHLIST):
+        text = open(LOCAL_WATCHLIST, encoding="utf-8").read()
+    if not text:
+        print("[watchlist] no watchlist found")
+        return []
+    rows = []
+    for raw in csv.DictReader(io.StringIO(text)):
+        row = { (k or "").strip().lower(): (v or "").strip() for k, v in raw.items() }
+        if not row.get("url"):
+            continue
+        if row.get("active", "").lower() in ("no", "false", "0", "off"):
+            continue
+        rows.append(row)
+    return rows
+
+
+def load_state():
+    if os.path.exists(STATE_FILE):
+        try:
+            return json.load(open(STATE_FILE))
+        except Exception:
+            pass
+    return {"events": {}}
+
+
+def save_state(state):
+    json.dump(state, open(STATE_FILE, "w"), indent=2)
+
+
+def evaluate(row, listings):
+    """Return (matches, limit, all_candidates). matches = listings at/under the limit."""
+    if not listings:
+        return [], None, []
+    sec = row.get("section", "").strip().lower()
+    candidates = [L for L in listings if sec in L["section"].lower()] if sec else listings
+    if not candidates:
+        return [], None, []
+    thr = float(row["threshold"])
+    if row.get("type", "$").strip() == "%":
+        avg = sum(L["price"] for L in listings) / len(listings)
+        limit = avg * (1 - thr / 100.0)
+    else:
+        limit = thr
+    matches = sorted([L for L in candidates if L["price"] <= limit], key=lambda L: L["price"])
+    return matches, limit, candidates
+
+
+def main():
+    wl = load_watchlist()
+    state = load_state()
+    now = time.time()
+    print(f"[watch] {len(wl)} active events")
+
+    for row in wl:
+        eid = event_id(row["url"])
+        est = state["events"].setdefault(eid, {"last": 0, "alerted": []})
+        interval = parse_interval(row.get("every"))
+        if now - est["last"] < interval:
+            continue  # not due yet
+        est["last"] = now
+        label = row.get("label") or row.get("section") or eid
+        print(f"[check] {label} (every {row.get('every') or '30min'})")
+        listings = get_listings(row["url"])
+        if not listings:
+            print("   no listings pulled (will retry next due cycle)")
+            continue
+        matches, limit, candidates = evaluate(row, listings)
+        alerted = set(est["alerted"])
+        cheapest = min(candidates, key=lambda L: L["price"]) if candidates else None
+        if cheapest:
+            print(f"   cheapest watched: {cheapest['section']} ${cheapest['price']:.0f}  (limit ${limit:.0f})")
+        for L in matches:
+            if L["id"] in alerted:
+                continue
+            print(f"   🔔 ALERT {L['section']} ${L['price']:.0f}")
+            send_alert(label, row["url"], L, limit)
+            est["alerted"].append(L["id"])
+        # prune alerted ids no longer present so a re-listing re-alerts
+        present = {L["id"] for L in candidates}
+        est["alerted"] = [i for i in est["alerted"] if i in present]
+
+    save_state(state)
+    print("[watch] done")
+
+
+if __name__ == "__main__":
+    main()
