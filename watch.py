@@ -92,7 +92,10 @@ def evaluate(row, listings):
     if not listings:
         return [], None, []
     sec = row.get("section", "").strip().lower()
-    candidates = [L for L in listings if sec in L["section"].lower()] if sec else listings
+    # section cell can list several sections separated by comma or pipe:
+    #   "pit, floor a, floor b"  -> watch any of them in one row
+    secs = [s.strip() for s in re.split(r"[,|]", sec) if s.strip()]
+    candidates = [L for L in listings if any(s in L["section"].lower() for s in secs)] if secs else listings
     if not candidates:
         return [], None, []
     thr = float(row["threshold"])
@@ -105,22 +108,34 @@ def evaluate(row, listings):
     return matches, limit, candidates
 
 
+def row_key(row):
+    """Per-row state key so multiple rows on the SAME event (different sections /
+    thresholds / intervals) each throttle + dedup independently."""
+    sec = (row.get("section") or "").strip().lower() or "*"
+    return f"{event_id(row['url'])}|{sec}"
+
+
 def main():
     wl = load_watchlist()
     state = load_state()
     now = time.time()
-    print(f"[watch] {len(wl)} active events")
+    print(f"[watch] {len(wl)} active rows")
+
+    scrape_cache = {}  # url -> listings; scrape each event at most once per run
 
     for row in wl:
-        eid = event_id(row["url"])
-        est = state["events"].setdefault(eid, {"last": 0, "alerted": []})
+        rid = row_key(row)
+        est = state["events"].setdefault(rid, {"last": 0, "alerted": []})
         interval = parse_interval(row.get("every"))
         if now - est["last"] < interval:
             continue  # not due yet
         est["last"] = now
-        label = row.get("label") or row.get("section") or eid
+        label = row.get("label") or row.get("section") or rid
         print(f"[check] {label} (every {row.get('every') or '30min'})")
-        listings = get_listings(row["url"])
+        url = row["url"]
+        if url not in scrape_cache:
+            scrape_cache[url] = get_listings(url)
+        listings = scrape_cache[url]
         if not listings:
             print("   no listings pulled (will retry next due cycle)")
             continue
