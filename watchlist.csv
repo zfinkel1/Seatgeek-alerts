@@ -1,2 +1,5 @@
 url,section,threshold,type,every,label,active
-https://seatgeek.com/rufus-du-sol-tickets/chicago-illinois-wrigley-field-2026-06-12-7-30-pm/concert/18076657,ga field,1000,$,5min,Rufus GA Field,yes
+https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-20-5-30-pm/concert/17873131,ga pit 1,30,flip,15min,MW Pit 1 (fast 30%),yes
+https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-20-5-30-pm/concert/17873131,ga pit 2,30,flip,15min,MW Pit 2 (fast 30%),yes
+https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-20-5-30-pm/concert/17873131,ga pit 3,30,flip,15min,MW Pit 3 (fast 30%),yes
+https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-20-5-30-pm/concert/17873131,ga pit 4,30,flip,15min,MW Pit 4 (fast 30%),yes

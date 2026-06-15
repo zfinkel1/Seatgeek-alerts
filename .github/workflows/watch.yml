@@ -1,11 +1,10 @@
 name: SeatGeek Watch
 
 on:
-  # Auto-schedule is OFF until you're ready — re-enable by uncommenting the cron
-  # below once you've confirmed a controlled test fires correctly.
-  # schedule:
-  #   - cron: "*/5 * * * *"   # every 5 min (per-event throttling handled in code)
-  workflow_dispatch:          # manual-only for now: run it from the Actions tab
+  schedule:
+    - cron: "*/5 * * * *"   # heartbeat every 5 min; real per-event frequency is the
+                            # "every" column in the watchlist (15min default here)
+  workflow_dispatch:          # also runnable manually from the Actions tab
 
 permissions:
   contents: write             # so it can commit state.json back

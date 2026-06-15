@@ -52,6 +52,10 @@ DEFAULT_INTERVAL = 1800  # 30 min if "every" is blank/unrecognized
 # about the best deals, not every seat. Override via env if you ever want more.
 MAX_ALERTS = int(os.environ.get("MAX_ALERTS_PER_CHECK", "3"))
 
+# Resale fee/haircut you lose when you re-sell a flipped ticket (SeatGeek/StubHub).
+# Used by "flip" mode to guarantee the net margin after fees. Default 15%.
+FLIP_FEE_PCT = float(os.environ.get("FLIP_FEE_PCT", "15"))
+
 
 def parse_interval(s):
     s = (s or "").strip().lower().replace(" ", "")
@@ -113,6 +117,26 @@ def evaluate(row, listings):
         return [], None, []
     thr = float(row["threshold"])
     typ = row.get("type", "$").strip().lower()
+    if typ.startswith("flip"):
+        # Profit-guaranteed flip: fire only when buying the cheapest and reselling
+        # nets >= thr% AFTER the FLIP_FEE_PCT resale fee.
+        #   flip          -> FAST: resell by undercutting the cheapest other listing
+        #   flip-patient   -> PATIENT: resell at the section median (more upside)
+        # buy <= R*(1-fee)/(1+margin)  guarantees (R*(1-fee) - buy)/buy >= margin.
+        s = sorted(candidates, key=lambda L: L["price"])
+        if len(s) < 2:
+            return [], None, candidates
+        fee = FLIP_FEE_PCT / 100.0
+        margin = thr / 100.0
+        if "pat" in typ:  # patient: resell at the section's median price
+            ps = sorted(L["price"] for L in candidates)
+            n = len(ps)
+            R = ps[n // 2] if n % 2 else (ps[n // 2 - 1] + ps[n // 2]) / 2
+        else:             # fast: resell just under the 2nd-cheapest
+            R = s[1]["price"]
+        limit = R * (1 - fee) / (1 + margin)
+        matches = [L for L in s if L["price"] <= limit]
+        return matches, limit, candidates
     if typ == "%":
         # "deal" mode: fire only when the single CHEAPEST listing sits thr% below
         # the 2nd cheapest — i.e. someone genuinely underpriced it, a real gap at
