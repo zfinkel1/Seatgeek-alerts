@@ -73,12 +73,23 @@ def get_listings(event_url, retries=2):
                         price = L.get("dp") or L.get("pf") or L.get("p")
                         if price is None:
                             continue
+                        # SeatGeek's per-listing value model (from real sales):
+                        #   dq.ev  = estimated fair value, dq.ddq = deal score 1-10
+                        dq = L.get("dq") or {}
+                        val = dq.get("ev")
+                        score = dq.get("ddq")
+                        try:
+                            score = int(float(score)) if score is not None else None
+                        except (TypeError, ValueError):
+                            score = None
                         out.append({
                             "section": str(L.get("s") or "").strip(),
                             "price": float(price),
                             "qty": L.get("q"),
                             "row": L.get("r"),
                             "id": str(L.get("id") or f"{L.get('s')}-{price}"),
+                            "value": float(val) if val else None,
+                            "score": score,
                         })
                     return out
                 finally:

@@ -46,22 +46,38 @@ def send_alert(label, event_url, listing, limit):
     price = listing["price"]
     qty = listing.get("qty")
     row = listing.get("row")
+    resale = listing.get("resale")
     qty_txt = f" · {qty} avail" if qty else ""
     row_txt = f" row {row}" if row else ""
 
-    subject = f"🎟️ {label}: {sec} ${price:.0f} (≤ ${limit:.0f})"
-    body = (
-        f"{label}\n"
-        f"{sec}{row_txt} — ${price:.2f}{qty_txt}\n"
-        f"(alert threshold: ${limit:.2f})\n\n"
-        f"BUY: {event_url}\n"
-    )
+    if resale:
+        # flip: show the section's real going rate + projected net profit after fees
+        fee = float(os.environ.get("FLIP_FEE_PCT", "15")) / 100.0
+        net = resale * (1 - fee)
+        profit = net - price
+        pct = listing.get("flip_pct", (profit / price * 100) if price else 0)
+        subject = f"🎟️ {label}: {sec}{row_txt} ${price:.0f} → ~${resale:.0f} mkt (+{pct:.0f}%)"
+        body = (
+            f"{label}\n"
+            f"{sec}{row_txt} — BUY ${price:.0f}{qty_txt}\n"
+            f"section going rate ~${resale:.0f}; resell − {fee*100:.0f}% fee = ${net:.0f} net\n"
+            f"→ profit +${profit:.0f} ({pct:.0f}%)\n\n"
+            f"BUY: {event_url}\n"
+        )
+        sms_body = f"{label}: {sec}{row_txt} ${price:.0f} (mkt ~${resale:.0f}, +{pct:.0f}%)\n{event_url}"
+    else:
+        ref = f" (≤ ${limit:.0f})" if limit else ""
+        subject = f"🎟️ {label}: {sec}{row_txt} ${price:.0f}{ref}"
+        body = (
+            f"{label}\n"
+            f"{sec}{row_txt} — ${price:.2f}{qty_txt}\n"
+            + (f"(buy-line ${limit:.2f})\n\n" if limit else "\n")
+            + f"BUY: {event_url}\n"
+        )
+        sms_body = f"{label}: {sec}{row_txt} ${price:.0f}{qty_txt}\n{event_url}"
 
-    # email
     if ALERT_EMAIL:
         _send(ALERT_EMAIL, subject, body)
-    # text (AT&T email-to-SMS) — keep it short
     if ALERT_PHONE:
         sms_to = f"{ALERT_PHONE}@{ATT_SMS_GATEWAY}"
-        sms_body = f"{label}: {sec}{row_txt} ${price:.0f}{qty_txt}\n{event_url}"
         _send(sms_to, subject, sms_body)

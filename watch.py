@@ -25,6 +25,7 @@ import sys
 import json
 import time
 import urllib.request
+from collections import defaultdict
 
 # Windows consoles default to cp1252 and choke on emoji in our log lines;
 # force UTF-8 so a print never crashes the run (no-op on Linux/Actions).
@@ -55,6 +56,9 @@ MAX_ALERTS = int(os.environ.get("MAX_ALERTS_PER_CHECK", "3"))
 # Resale fee/haircut you lose when you re-sell a flipped ticket (SeatGeek/StubHub).
 # Used by "flip" mode to guarantee the net margin after fees. Default 15%.
 FLIP_FEE_PCT = float(os.environ.get("FLIP_FEE_PCT", "15"))
+# Liquidity gate: a section needs at least this many listings before we trust its
+# cheapest asks as the real "going rate". Thin sections can't fake a deal.
+FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
 
 
 def parse_interval(s):
@@ -118,25 +122,46 @@ def evaluate(row, listings):
     thr = float(row["threshold"])
     typ = row.get("type", "$").strip().lower()
     if typ.startswith("flip"):
-        # Profit-guaranteed flip: fire only when buying the cheapest and reselling
-        # nets >= thr% AFTER the FLIP_FEE_PCT resale fee.
-        #   flip          -> FAST: resell by undercutting the cheapest other listing
-        #   flip-patient   -> PATIENT: resell at the section median (more upside)
-        # buy <= R*(1-fee)/(1+margin)  guarantees (R*(1-fee) - buy)/buy >= margin.
-        s = sorted(candidates, key=lambda L: L["price"])
-        if len(s) < 2:
-            return [], None, candidates
         fee = FLIP_FEE_PCT / 100.0
         margin = thr / 100.0
-        if "pat" in typ:  # patient: resell at the section's median price
-            ps = sorted(L["price"] for L in candidates)
-            n = len(ps)
-            R = ps[n // 2] if n % 2 else (ps[n // 2 - 1] + ps[n // 2]) / 2
-        else:             # fast: resell just under the 2nd-cheapest
-            R = s[1]["price"]
-        limit = R * (1 - fee) / (1 + margin)
-        matches = [L for L in s if L["price"] <= limit]
-        return matches, limit, candidates
+        patient = "pat" in typ
+
+        def section_deals(group):
+            # A flip = a listing priced margin% below the section's REAL going rate
+            # (after fees) — judged on actual asks, not SeatGeek's inflated "value".
+            # Reference R = 2nd-cheapest ask (fast: the floor you'd undercut to sell
+            # now) or the median (patient). Liquidity-gated so a thin or mostly-
+            # overpriced section can't manufacture a fake deal.
+            s = sorted(group, key=lambda L: L["price"])
+            if len(s) < FLIP_MIN_LISTINGS:
+                return []
+            if patient:
+                ps = [L["price"] for L in s]
+                n = len(ps)
+                R = ps[n // 2] if n % 2 else (ps[n // 2 - 1] + ps[n // 2]) / 2
+            else:
+                R = s[1]["price"]
+            buyline = R * (1 - fee) / (1 + margin)
+            hits = []
+            for L in s:
+                if L["price"] <= buyline:
+                    L = dict(L)
+                    L["resale"] = R
+                    L["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
+                    hits.append(L)
+            return hits
+
+        if secs:  # explicit section(s) -> treat the watched set as one comparable pool
+            deals = section_deals(candidates)
+        else:     # whole event -> score each section independently (no cross-skew)
+            bysec = defaultdict(list)
+            for L in candidates:
+                bysec[L["section"]].append(L)
+            deals = []
+            for g in bysec.values():
+                deals += section_deals(g)
+        deals.sort(key=lambda L: -L["flip_pct"])  # best flip first
+        return deals, None, candidates
     if typ == "%":
         # "deal" mode: fire only when the single CHEAPEST listing sits thr% below
         # the 2nd cheapest — i.e. someone genuinely underpriced it, a real gap at
@@ -190,7 +215,8 @@ def main():
         alerted = set(est["alerted"])
         cheapest = min(candidates, key=lambda L: L["price"]) if candidates else None
         if cheapest:
-            print(f"   cheapest watched: {cheapest['section']} ${cheapest['price']:.0f}  (limit ${limit:.0f})")
+            lim = f"  (buy-line ${limit:.0f})" if limit else ""
+            print(f"   cheapest watched: {cheapest['section']} ${cheapest['price']:.0f}{lim} · {len(matches)} deal(s)")
         sent = 0
         for L in matches:
             if L["id"] in alerted:
