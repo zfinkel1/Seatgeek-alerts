@@ -112,9 +112,16 @@ def evaluate(row, listings):
     if not candidates:
         return [], None, []
     thr = float(row["threshold"])
-    if row.get("type", "$").strip() == "%":
-        avg = sum(L["price"] for L in listings) / len(listings)
-        limit = avg * (1 - thr / 100.0)
+    typ = row.get("type", "$").strip().lower()
+    if typ == "%":
+        # "deal" mode: alert when a ticket is thr% below the TYPICAL (median) price
+        # of the watched section(s). Apples-to-apples within the section, and median
+        # (not average) so suite/outlier prices don't poison the reference point —
+        # a single underpriced listing genuinely stands out.
+        prices = sorted(L["price"] for L in candidates)
+        n = len(prices)
+        median = prices[n // 2] if n % 2 else (prices[n // 2 - 1] + prices[n // 2]) / 2
+        limit = median * (1 - thr / 100.0)
     else:
         limit = thr
     matches = sorted([L for L in candidates if L["price"] <= limit], key=lambda L: L["price"])
@@ -125,7 +132,9 @@ def row_key(row):
     """Per-row state key so multiple rows on the SAME event (different sections /
     thresholds / intervals) each throttle + dedup independently."""
     sec = (row.get("section") or "").strip().lower() or "*"
-    return f"{event_id(row['url'])}|{sec}"
+    typ = (row.get("type") or "$").strip().lower()
+    thr = (row.get("threshold") or "").strip()
+    return f"{event_id(row['url'])}|{sec}|{typ}{thr}"
 
 
 def main():
