@@ -122,7 +122,9 @@ def effective_interval(row):
         return 300          # game day / day before -> 5min
     if days <= 7:
         return 600          # within a week -> 10min (HOT)
-    return 3600             # further out -> hourly (cheap)
+    if days <= 30:
+        return 3600         # within a month -> hourly
+    return 21600            # more than a month out -> every 6h (far, low urgency)
 
 
 def event_id(url):
