@@ -20,6 +20,11 @@ TWILIO_SID = os.environ.get("TWILIO_SID")
 TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
 TWILIO_FROM = os.environ.get("TWILIO_FROM")          # your Twilio number, e.g. +13125551234
 
+# Telegram — free instant push to your phone. The SMS gateway is dead and Twilio
+# needs A2P registration, so Telegram is the practical phone-alert channel.
+TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+
 
 def _send(to_addr, subject, body):
     if not (SENDGRID_API_KEY and FROM_EMAIL and to_addr):
@@ -70,6 +75,22 @@ def _send_sms(body):
         _send(f"{ALERT_PHONE}@{ATT_SMS_GATEWAY}", "ticket alert", body)
 
 
+def _send_telegram(body):
+    """Instant push to the phone via a Telegram bot (free, reliable)."""
+    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+        return
+    data = urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": body}).encode()
+    req = urllib.request.Request(
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        data=data, method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=20) as r:
+            print(f"  [alert] Telegram sent ({r.status})")
+    except Exception as e:
+        print(f"  [alert] Telegram failed: {e}")
+
+
 def send_alert(label, event_url, listing, limit):
     """Fire an email + text for one qualifying listing."""
     sec = listing["section"] or "any section"
@@ -108,4 +129,5 @@ def send_alert(label, event_url, listing, limit):
 
     if ALERT_EMAIL:
         _send(ALERT_EMAIL, subject, body)
+    _send_telegram(body)
     _send_sms(sms_body)
