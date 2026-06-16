@@ -66,7 +66,7 @@ FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
 # Compare a listing against its section NEIGHBORHOOD (this many sections on each
 # side, by section number) — adjacent sections are comparable seats and give a
 # real market, so a couple overpriced section-mates can't fake a deal.
-FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "2"))
+FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "4"))
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 50%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
