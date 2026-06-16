@@ -1,5 +1,14 @@
 url,section,threshold,type,every,label,active
-https://seatgeek.com/chicago-cubs-tickets/6-19-2026-chicago-illinois-wrigley-field/mlb/17695213,,30,flip,10min,Cubs Fri 6/19,yes
-https://seatgeek.com/chicago-cubs-tickets/6-20-2026-chicago-illinois-wrigley-field/mlb/17695215,,30,flip,10min,Cubs Sat 6/20,yes
-https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-19-5-30-pm/concert/17873130,,30,flip,10min,Morgan Wallen Fri 6/19,yes
-https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-20-5-30-pm/concert/17873131,,30,flip,10min,Morgan Wallen Sat 6/20,yes
+https://seatgeek.com/chicago-cubs-tickets/6-19-2026-chicago-illinois-wrigley-field/mlb/17695213,,30,flip,auto,Cubs Fri 6/19,yes
+https://seatgeek.com/chicago-cubs-tickets/6-20-2026-chicago-illinois-wrigley-field/mlb/17695215,,30,flip,auto,Cubs Sat 6/20,yes
+https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-19-5-30-pm/concert/17873130,,30,flip,auto,Morgan Wallen Fri 6/19,yes
+https://seatgeek.com/morgan-wallen-tickets/chicago-illinois-soldier-field-2026-06-20-5-30-pm/concert/17873131,,30,flip,auto,Morgan Wallen Sat 6/20,yes
+https://seatgeek.com/milwaukee-brewers-tickets/6-27-2026-milwaukee-wisconsin-american-family-field/mlb/17695542,,30,flip,auto,Brewers 6/27,yes
+https://seatgeek.com/chicago-cubs-tickets/7-3-2026-chicago-illinois-wrigley-field/mlb/17695225,,30,flip,auto,Cubs 7/3,yes
+https://seatgeek.com/chicago-cubs-tickets/7-4-2026-chicago-illinois-wrigley-field/mlb/17695226,,30,flip,auto,Cubs 7/4,yes
+https://seatgeek.com/mlb-home-run-derby-tickets/7-13-2026-philadelphia-pennsylvania-citizens-bank-park/mlb/17877470,,30,flip,auto,HR Derby 7/13,yes
+https://seatgeek.com/mlb-all-star-game-tickets/7-14-2026-philadelphia-pennsylvania-citizens-bank-park/mlb/17627244,,30,flip,auto,All-Star Game 7/14,yes
+https://seatgeek.com/chicago-cubs-tickets/7-18-2026-chicago-illinois-wrigley-field/mlb/17695229,,30,flip,auto,Cubs 7/18,yes
+https://seatgeek.com/chicago-cubs-tickets/7-31-2026-chicago-illinois-wrigley-field/mlb/17695241,,30,flip,auto,Cubs 7/31,yes
+https://seatgeek.com/chicago-cubs-tickets/8-1-2026-chicago-illinois-wrigley-field/mlb/17695244,,30,flip,auto,Cubs 8/1,yes
+https://seatgeek.com/chicago-cubs-tickets/8-5-2026-chicago-illinois-wrigley-field/mlb/17695252,,30,flip,auto,Cubs 8/5,yes

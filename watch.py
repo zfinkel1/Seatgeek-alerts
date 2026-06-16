@@ -26,6 +26,7 @@ import json
 import time
 import urllib.request
 from collections import defaultdict
+from datetime import date
 
 # Windows consoles default to cp1252 and choke on emoji in our log lines;
 # force UTF-8 so a print never crashes the run (no-op on Linux/Actions).
@@ -64,6 +65,45 @@ FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
 def parse_interval(s):
     s = (s or "").strip().lower().replace(" ", "")
     return _INTERVALS.get(s, DEFAULT_INTERVAL)
+
+
+def _event_date(url):
+    """Pull the event date from a SeatGeek URL. Handles both formats:
+    concerts ...soldier-field-2026-06-19-5-30-pm/... (YYYY-MM-DD) and
+    sports ...cubs-tickets/6-19-2026-chicago-... (M-D-YYYY)."""
+    m = re.search(r"(20\d\d)-(\d{1,2})-(\d{1,2})", url)
+    if m:
+        try:
+            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+        except ValueError:
+            pass
+    m = re.search(r"(?:^|/)(\d{1,2})-(\d{1,2})-(20\d\d)", url)
+    if m:
+        try:
+            return date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
+        except ValueError:
+            pass
+    return None
+
+
+def effective_interval(row):
+    """Cadence for a row. every=auto ramps by days-to-event:
+    >7d -> hourly, <=7d -> 10min (HOT), <=1d (game day) -> 5min, past -> dormant.
+    Any other value is a fixed interval (5min/1h/etc)."""
+    ev = (row.get("every") or "").strip().lower()
+    if ev != "auto":
+        return parse_interval(ev)
+    d = _event_date(row.get("url", ""))
+    if d is None:
+        return 3600  # can't read date -> safe hourly default
+    days = (d - date.today()).days
+    if days < -1:
+        return 30 * 86400   # event passed -> effectively off
+    if days <= 1:
+        return 300          # game day / day before -> 5min
+    if days <= 7:
+        return 600          # within a week -> 10min (HOT)
+    return 3600             # further out -> hourly (cheap)
 
 
 def event_id(url):
@@ -198,7 +238,7 @@ def main():
     for row in wl:
         rid = row_key(row)
         est = state["events"].setdefault(rid, {"last": 0, "alerted": []})
-        interval = parse_interval(row.get("every"))
+        interval = effective_interval(row)
         if now - est["last"] < interval:
             continue  # not due yet
         est["last"] = now
