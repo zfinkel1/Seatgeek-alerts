@@ -60,6 +60,10 @@ FLIP_FEE_PCT = float(os.environ.get("FLIP_FEE_PCT", "15"))
 # Liquidity gate: a section needs at least this many listings before we trust its
 # cheapest asks as the real "going rate". Thin sections can't fake a deal.
 FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
+# Compare a listing against its section NEIGHBORHOOD (this many sections on each
+# side, by section number) — adjacent sections are comparable seats and give a
+# real market, so a couple overpriced section-mates can't fake a deal.
+FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "2"))
 
 
 def parse_interval(s):
@@ -83,6 +87,18 @@ def _event_date(url):
             return date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
         except ValueError:
             pass
+    return None
+
+
+def _section_num(s):
+    """Leading section number for numbered seating sections ('130', '230 left',
+    '412' -> 130/230/412), so we can group adjacent sections. Returns None for
+    named areas ('GA Pit 1', 'Club Box Infield 12') -> those compare by name only."""
+    s = (s or "").strip()
+    if s and s[0].isdigit():
+        m = re.match(r"(\d+)", s)
+        if m:
+            return int(m.group(1))
     return None
 
 
@@ -193,13 +209,43 @@ def evaluate(row, listings):
 
         if secs:  # explicit section(s) -> treat the watched set as one comparable pool
             deals = section_deals(candidates)
-        else:     # whole event -> score each section independently (no cross-skew)
-            bysec = defaultdict(list)
+        else:     # whole event -> compare each section vs its NEIGHBORHOOD (+-ADJ
+                  # numbered sections). Adjacent sections are comparable seats, so the
+                  # "going rate" has real data and a couple overpriced section-mates
+                  # can't fake a deal (the false-positive we saw: $1160 looked cheap vs
+                  # its own thin section, but section 128 next door was also $1160).
+            by_num = defaultdict(list)
+            by_name = defaultdict(list)
             for L in candidates:
-                bysec[L["section"]].append(L)
+                num = _section_num(L["section"])
+                (by_num[num] if num is not None else by_name[L["section"].lower()]).append(L)
+
+            def neighborhood_deal(own, pool):
+                if len(pool) < FLIP_MIN_LISTINGS:
+                    return []
+                pp = sorted(x["price"] for x in pool)
+                if patient:
+                    n = len(pp)
+                    R = pp[n // 2] if n % 2 else (pp[n // 2 - 1] + pp[n // 2]) / 2
+                else:
+                    R = pp[1]   # 2nd-cheapest across the neighborhood = corroborated floor
+                buyline = R * (1 - fee) / (1 + margin)
+                cheapest = min(own, key=lambda x: x["price"])
+                if cheapest["price"] <= buyline:
+                    L = dict(cheapest)
+                    L["resale"] = R
+                    L["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
+                    return [L]
+                return []
+
             deals = []
-            for g in bysec.values():
-                deals += section_deals(g)
+            for num, group in by_num.items():
+                pool = []
+                for nn in range(num - FLIP_ADJ_SECTIONS, num + FLIP_ADJ_SECTIONS + 1):
+                    pool += by_num.get(nn, [])
+                deals += neighborhood_deal(group, pool)
+            for name, group in by_name.items():   # named areas: same-name pool only
+                deals += section_deals(group)
         deals.sort(key=lambda L: -L["flip_pct"])  # best flip first
         return deals, None, candidates
     if typ == "%":
