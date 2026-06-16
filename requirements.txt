@@ -1,1 +1,1 @@
-playwright
+# No third-party deps — the Scrapfly scraper uses only the Python standard library.

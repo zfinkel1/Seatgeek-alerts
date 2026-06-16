@@ -1,18 +1,32 @@
 """
-SeatGeek section-level listing fetcher via Bright Data Browser API.
+SeatGeek section-level listings via Scrapfly (direct API).
 
-A real remote browser (Bright Data) loads the event page — beating PerimeterX —
-and we capture the `event_listings_v2` XHR it fires, which has every listing with
-section + price. Images/fonts/css are blocked to keep bandwidth (cost) down.
+The old approach drove a Bright Data remote browser to load the full event page
+and capture the event_listings_v2 XHR — SeatGeek's PerimeterX/DataDome flagged
+that fingerprint under heavy use. New approach: hit the event_listings_v2 JSON
+API DIRECTLY through Scrapfly's Anti-Scraping-Protection (asp=true). No full page
+render — much cheaper + faster, and Scrapfly fights the anti-bot for us.
+
+client_id is SeatGeek's stable public web client id (decodes to "1662|..."),
+not a session token, so it's reusable. Override via SEATGEEK_CLIENT_ID if it ever
+rotates (re-grab it from any event page's `?client_id=` XHR param).
 """
 import os
-from playwright.sync_api import sync_playwright
+import re
+import json
+import urllib.parse
+import urllib.request
 
-_BLOCK = {"image", "media", "font", "stylesheet"}
+SEATGEEK_CLIENT_ID = os.environ.get("SEATGEEK_CLIENT_ID", "MTY2MnwxMzgzMzIwMTU4")
+
+
+def _event_id(url):
+    m = re.search(r"/(\d{6,})(?:[/?#]|$)", url) or re.search(r"(\d{6,})", url)
+    return m.group(1) if m else None
 
 
 def _find_listings(o):
-    """Recursively find the array of listing dicts (has section `s` + a price field)."""
+    """Recursively find the array of listing dicts (has section `s` + a price)."""
     if isinstance(o, list) and o and isinstance(o[0], dict):
         k = o[0]
         if "s" in k and any(p in k for p in ("dp", "pf", "p", "price")):
@@ -32,68 +46,59 @@ def _find_listings(o):
 
 def get_listings(event_url, retries=2):
     """
-    Return a list of normalized listings for a SeatGeek event:
-        {"section": str, "price": float (all-in), "qty": int|None, "row": str|None, "id": str}
+    Return normalized listings for a SeatGeek event:
+        {"section","price"(all-in),"qty","row","id","value","score"}
     Empty list if it couldn't pull them (caller decides whether to retry later).
     """
-    wss = os.environ.get("BRIGHTDATA_BROWSER_WSS")
-    if not wss:
-        print("  [scrape] BRIGHTDATA_BROWSER_WSS not set")
+    key = os.environ.get("SCRAPFLY_KEY")
+    if not key:
+        print("  [scrape] SCRAPFLY_KEY not set")
         return []
+    eid = _event_id(event_url)
+    if not eid:
+        print(f"  [scrape] could not parse event id from {event_url}")
+        return []
+
+    target = (f"https://seatgeek.com/api/event_listings_v2"
+              f"?id={eid}&client_id={SEATGEEK_CLIENT_ID}")
+    api = ("https://api.scrapfly.io/scrape?key=" + urllib.parse.quote(key)
+           + "&url=" + urllib.parse.quote(target, safe="")
+           + "&asp=true&country=us")
+
     last_err = None
-    for attempt in range(1, retries + 1):
+    for _ in range(1, retries + 1):
         try:
-            with sync_playwright() as pw:
-                browser = pw.chromium.connect_over_cdp(wss, timeout=60000)
+            with urllib.request.urlopen(api, timeout=90) as resp:
+                payload = json.loads(resp.read().decode("utf-8", "replace"))
+            result = payload.get("result", {})
+            if result.get("status_code") != 200:
+                last_err = f"target status {result.get('status_code')}"
+                continue
+            data = json.loads(result.get("content") or "{}")
+            arr = _find_listings(data) or []
+            out = []
+            for L in arr:
+                price = L.get("dp") or L.get("pf") or L.get("p")
+                if price is None:
+                    continue
+                dq = L.get("dq") or {}
+                score = dq.get("ddq")
                 try:
-                    page = browser.new_page()
-                    # Collect the page's OWN listings XHR (it's authorized — carries the
-                    # client_id + cookies). No asset-blocking: tampering trips PerimeterX.
-                    hits = []
-                    page.on("response", lambda r: hits.append(r) if "event_listings" in r.url else None)
-                    page.goto(event_url, wait_until="domcontentloaded", timeout=90000)
-                    raw = None
-                    for _ in range(40):  # wait up to ~40s for the listings call
-                        for r in list(hits):
-                            try:
-                                if r.status == 200:
-                                    raw = r.json()
-                                    break
-                            except Exception:
-                                pass
-                        if raw is not None:
-                            break
-                        page.wait_for_timeout(1000)
-                    if raw is None:
-                        last_err = "no listings response captured"
-                        continue  # retry
-                    arr = _find_listings(raw) or []
-                    out = []
-                    for L in arr:
-                        price = L.get("dp") or L.get("pf") or L.get("p")
-                        if price is None:
-                            continue
-                        # SeatGeek's per-listing value model (from real sales):
-                        #   dq.ev  = estimated fair value, dq.ddq = deal score 1-10
-                        dq = L.get("dq") or {}
-                        val = dq.get("ev")
-                        score = dq.get("ddq")
-                        try:
-                            score = int(float(score)) if score is not None else None
-                        except (TypeError, ValueError):
-                            score = None
-                        out.append({
-                            "section": str(L.get("s") or "").strip(),
-                            "price": float(price),
-                            "qty": L.get("q"),
-                            "row": L.get("r"),
-                            "id": str(L.get("id") or f"{L.get('s')}-{price}"),
-                            "value": float(val) if val else None,
-                            "score": score,
-                        })
-                    return out
-                finally:
-                    browser.close()
+                    score = int(float(score)) if score is not None else None
+                except (TypeError, ValueError):
+                    score = None
+                out.append({
+                    "section": str(L.get("s") or "").strip(),
+                    "price": float(price),
+                    "qty": L.get("q"),
+                    "row": L.get("r"),
+                    "id": str(L.get("id") or f"{L.get('s')}-{price}"),
+                    "value": float(dq["ev"]) if dq.get("ev") else None,
+                    "score": score,
+                })
+            if out:
+                return out
+            last_err = "no listings in API response"
         except Exception as e:
             last_err = e
     if last_err:
