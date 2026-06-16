@@ -1,10 +1,12 @@
 name: SeatGeek Watch
 
 on:
-  schedule:
-    - cron: "*/5 * * * *"   # heartbeat every 5 min; real per-event frequency is the
-                            # "every" column in the watchlist (15min default here)
-  workflow_dispatch:          # also runnable manually from the Actions tab
+  # Schedule DISABLED — replaced by an always-on Railway worker (worker.py), because
+  # GitHub throttled this */5 schedule down to once every few hours (too slow for
+  # fast flips). Kept as a manual-only fallback.
+  # schedule:
+  #   - cron: "*/5 * * * *"
+  workflow_dispatch:          # manual fallback from the Actions tab
 
 permissions:
   contents: write             # so it can commit state.json back
