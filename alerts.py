@@ -1,17 +1,24 @@
 """
-Alert delivery — email + text (AT&T email-to-SMS) via SendGrid.
-Text is just an email to <number>@txt.att.net, so one SendGrid call covers both.
+Alert delivery — email via SendGrid + real SMS via Twilio.
+(The AT&T email-to-SMS gateway is dead, so texts go through Twilio when configured.)
 """
 import os
 import json
+import base64
+import urllib.parse
 import urllib.request
 
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
 ALERT_EMAIL = os.environ.get("ALERT_EMAIL")          # zfinkel1@gmail.com
-ALERT_PHONE = os.environ.get("ALERT_PHONE")          # 10-digit, e.g. 3125551234 (AT&T)
+ALERT_PHONE = os.environ.get("ALERT_PHONE")          # 10-digit or +1...; the destination
 FROM_EMAIL = os.environ.get("FROM_EMAIL", ALERT_EMAIL)  # verified SendGrid sender
 
 ATT_SMS_GATEWAY = "txt.att.net"
+
+# Twilio — real SMS straight to the phone (instant, no spam folder, no dead gateway).
+TWILIO_SID = os.environ.get("TWILIO_SID")
+TWILIO_AUTH_TOKEN = os.environ.get("TWILIO_AUTH_TOKEN")
+TWILIO_FROM = os.environ.get("TWILIO_FROM")          # your Twilio number, e.g. +13125551234
 
 
 def _send(to_addr, subject, body):
@@ -38,6 +45,29 @@ def _send(to_addr, subject, body):
             print(f"  [alert] sent to {to_addr} ({r.status})")
     except Exception as e:
         print(f"  [alert] send failed to {to_addr}: {e}")
+
+
+def _send_sms(body):
+    """Real SMS via Twilio if configured; else fall back to the (defunct) carrier
+    email-to-SMS gateway. Twilio is instant and actually delivers."""
+    if not ALERT_PHONE:
+        return
+    to = ALERT_PHONE if ALERT_PHONE.startswith("+") else "+1" + ALERT_PHONE
+    if TWILIO_SID and TWILIO_AUTH_TOKEN and TWILIO_FROM:
+        data = urllib.parse.urlencode({"From": TWILIO_FROM, "To": to, "Body": body}).encode()
+        req = urllib.request.Request(
+            f"https://api.twilio.com/2010-04-01/Accounts/{TWILIO_SID}/Messages.json",
+            data=data, method="POST",
+        )
+        auth = base64.b64encode(f"{TWILIO_SID}:{TWILIO_AUTH_TOKEN}".encode()).decode()
+        req.add_header("Authorization", "Basic " + auth)
+        try:
+            with urllib.request.urlopen(req, timeout=20) as r:
+                print(f"  [alert] Twilio SMS sent ({r.status})")
+        except Exception as e:
+            print(f"  [alert] Twilio SMS failed: {e}")
+    else:
+        _send(f"{ALERT_PHONE}@{ATT_SMS_GATEWAY}", "ticket alert", body)
 
 
 def send_alert(label, event_url, listing, limit):
@@ -78,6 +108,4 @@ def send_alert(label, event_url, listing, limit):
 
     if ALERT_EMAIL:
         _send(ALERT_EMAIL, subject, body)
-    if ALERT_PHONE:
-        sms_to = f"{ALERT_PHONE}@{ATT_SMS_GATEWAY}"
-        _send(sms_to, subject, sms_body)
+    _send_sms(sms_body)

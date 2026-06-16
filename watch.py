@@ -119,12 +119,10 @@ def effective_interval(row):
     if days < -1:
         return 30 * 86400   # event passed -> effectively off
     if days <= 1:
-        return 300          # game day / day before -> 5min
+        return 120          # game day / day before -> 2min (deals move fastest here)
     if days <= 7:
-        return 600          # within a week -> 10min (HOT)
-    if days <= 30:
-        return 3600         # within a month -> hourly
-    return 21600            # more than a month out -> every 6h (far, low urgency)
+        return 180          # within a week -> 3min (HOT)
+    return 3600             # further out -> hourly
 
 
 def event_id(url):
