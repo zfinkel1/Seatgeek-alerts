@@ -64,6 +64,9 @@ FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
 # side, by section number) — adjacent sections are comparable seats and give a
 # real market, so a couple overpriced section-mates can't fake a deal.
 FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "2"))
+# Single tickets (qty 1) are harder to resell, so require a bigger margin on them
+# than the row's normal threshold (pairs). Default 50%.
+FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
 
 
 def parse_interval(s):
@@ -180,7 +183,14 @@ def evaluate(row, listings):
     if typ.startswith("flip"):
         fee = FLIP_FEE_PCT / 100.0
         margin = thr / 100.0
+        single_margin = FLIP_SINGLE_MARGIN / 100.0
         patient = "pat" in typ
+
+        def _buyline(L, R):
+            # singles (qty 1) are harder to resell -> demand a bigger margin -> a lower
+            # buy price to qualify. Everything else uses the row's normal margin.
+            m = single_margin if L.get("qty") == 1 else margin
+            return R * (1 - fee) / (1 + m)
 
         def section_deals(group):
             # A flip = a listing priced margin% below the section's REAL going rate
@@ -197,15 +207,14 @@ def evaluate(row, listings):
                 R = ps[n // 2] if n % 2 else (ps[n // 2 - 1] + ps[n // 2]) / 2
             else:
                 R = s[1]["price"]
-            buyline = R * (1 - fee) / (1 + margin)
             hits = []
             for L in s:
-                if L["price"] <= buyline:
-                    L = dict(L)
-                    L["resale"] = R
-                    L["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
-                    hits.append(L)
-            return hits
+                if L["price"] <= _buyline(L, R):
+                    h = dict(L)
+                    h["resale"] = R
+                    h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
+                    hits.append(h)
+            return [max(hits, key=lambda h: h["flip_pct"])] if hits else []
 
         if secs:  # explicit section(s) -> treat the watched set as one comparable pool
             deals = section_deals(candidates)
@@ -229,14 +238,14 @@ def evaluate(row, listings):
                     R = pp[n // 2] if n % 2 else (pp[n // 2 - 1] + pp[n // 2]) / 2
                 else:
                     R = pp[1]   # 2nd-cheapest across the neighborhood = corroborated floor
-                buyline = R * (1 - fee) / (1 + margin)
-                cheapest = min(own, key=lambda x: x["price"])
-                if cheapest["price"] <= buyline:
-                    L = dict(cheapest)
-                    L["resale"] = R
-                    L["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
-                    return [L]
-                return []
+                hits = []
+                for L in own:
+                    if L["price"] <= _buyline(L, R):
+                        h = dict(L)
+                        h["resale"] = R
+                        h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
+                        hits.append(h)
+                return [max(hits, key=lambda h: h["flip_pct"])] if hits else []
 
             deals = []
             for num, group in by_num.items():
