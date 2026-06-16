@@ -37,7 +37,7 @@ except Exception:
     pass
 
 from scrape import get_listings
-from alerts import send_alert
+from alerts import send_alert, poll_ignores, mute_key, event_id_from_url
 
 # Persist state (per-event throttle + already-alerted ids) on a Railway VOLUME if
 # one is attached, so a redeploy doesn't wipe the dedup memory and re-fire alerts.
@@ -314,11 +314,17 @@ def row_key(row):
 
 
 def main():
+    # Read 'Mute this section' taps every loop (even off-hours) so mutes register
+    # promptly; then bail if we're outside active hours.
+    state = load_state()
+    muted = poll_ignores(state)
+    if muted:
+        print(f"[ignore] muted {muted} new section(s)")
+        save_state(state)
     if not _within_active_hours():
         print(f"[watch] outside {ACTIVE_HOUR_START}:00-{ACTIVE_HOUR_END}:00 CT window — skipping")
         return
     wl = load_watchlist()
-    state = load_state()
     now = time.time()
     print(f"[watch] {len(wl)} active rows")
 
@@ -342,12 +348,17 @@ def main():
             continue
         matches, limit, candidates = evaluate(row, listings)
         alerted = set(est["alerted"])
+        ignored = set(state.get("ignored", []))
+        eid = event_id_from_url(url)
         cheapest = min(candidates, key=lambda L: L["price"]) if candidates else None
         if cheapest:
             lim = f"  (buy-line ${limit:.0f})" if limit else ""
             print(f"   cheapest watched: {cheapest['section']} ${cheapest['price']:.0f}{lim} · {len(matches)} deal(s)")
         sent = 0
         for L in matches:
+            if mute_key(eid, L["section"]) in ignored:
+                est["alerted"].append(L["id"])  # muted section -> record as seen, never alert
+                continue
             if L["id"] in alerted:
                 continue
             if sent < MAX_ALERTS:

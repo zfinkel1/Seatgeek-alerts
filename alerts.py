@@ -3,6 +3,7 @@ Alert delivery — email via SendGrid + real SMS via Twilio.
 (The AT&T email-to-SMS gateway is dead, so texts go through Twilio when configured.)
 """
 import os
+import re
 import json
 import base64
 import urllib.parse
@@ -75,20 +76,85 @@ def _send_sms(body):
         _send(f"{ALERT_PHONE}@{ATT_SMS_GATEWAY}", "ticket alert", body)
 
 
-def _send_telegram(body):
-    """Instant push to the phone via a Telegram bot (free, reliable)."""
-    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
-        return
-    data = urllib.parse.urlencode({"chat_id": TELEGRAM_CHAT_ID, "text": body}).encode()
+def _telegram_api(method, params):
+    data = urllib.parse.urlencode(params).encode()
     req = urllib.request.Request(
-        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/{method}",
         data=data, method="POST",
     )
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode("utf-8", "replace"))
+
+
+def event_id_from_url(url):
+    """Stable event id for muting — the 6+ digit id in the SeatGeek URL.
+    Must match watch.event_id() so a mute keys to the same event."""
+    m = re.search(r"(\d{6,})", url or "")
+    return m.group(1) if m else (url or "").strip()
+
+
+def mute_key(event_id, section):
+    """The (event, section) key a mute targets. Section lowercased + capped so the
+    whole callback_data stays under Telegram's 64-byte limit, and so the worker
+    matches future listings to the mute consistently."""
+    return f"{event_id}|{(section or '').strip().lower()[:48]}"
+
+
+def _send_telegram(body, mute_target=None):
+    """Instant push to the phone via a Telegram bot (free, reliable).
+    mute_target = a mute_key() string -> attach a 'Mute this section' button."""
+    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+        return
+    params = {"chat_id": TELEGRAM_CHAT_ID, "text": body}
+    if mute_target:
+        params["reply_markup"] = json.dumps({"inline_keyboard": [[
+            {"text": "🚫 Mute this section", "callback_data": "ig|" + mute_target}
+        ]]})
     try:
-        with urllib.request.urlopen(req, timeout=20) as r:
-            print(f"  [alert] Telegram sent ({r.status})")
+        _telegram_api("sendMessage", params)
+        print("  [alert] Telegram sent")
     except Exception as e:
         print(f"  [alert] Telegram failed: {e}")
+
+
+def poll_ignores(state):
+    """Pull 'Mute this section' taps from Telegram and record them in
+    state['ignored']. Advances state['tg_offset'] so each tap is read once.
+    Returns the number of NEW sections muted this poll."""
+    if not (TELEGRAM_TOKEN and TELEGRAM_CHAT_ID):
+        return 0
+    offset = state.get("tg_offset", 0)
+    url = (f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/getUpdates"
+           f"?timeout=0&offset={offset}"
+           f"&allowed_updates={urllib.parse.quote('[\"callback_query\"]')}")
+    try:
+        with urllib.request.urlopen(url, timeout=20) as r:
+            data = json.loads(r.read().decode("utf-8", "replace"))
+    except Exception as e:
+        print(f"  [ignore] poll failed: {e}")
+        return 0
+    ignored = set(state.get("ignored", []))
+    new = 0
+    for upd in data.get("result", []):
+        state["tg_offset"] = upd["update_id"] + 1
+        cq = upd.get("callback_query")
+        if not cq:
+            continue
+        cdata = cq.get("data", "")
+        if cdata.startswith("ig|"):
+            key = cdata[3:]
+            if key not in ignored:
+                ignored.add(key)
+                new += 1
+            try:
+                _telegram_api("answerCallbackQuery", {
+                    "callback_query_id": cq["id"],
+                    "text": "Muted ✓ — won't alert this section again",
+                })
+            except Exception:
+                pass
+    state["ignored"] = sorted(ignored)
+    return new
 
 
 def send_alert(label, event_url, listing, limit):
@@ -129,5 +195,5 @@ def send_alert(label, event_url, listing, limit):
 
     if ALERT_EMAIL:
         _send(ALERT_EMAIL, subject, body)
-    _send_telegram(body)
+    _send_telegram(body, mute_target=mute_key(event_id_from_url(event_url), listing["section"]))
     _send_sms(sms_body)
