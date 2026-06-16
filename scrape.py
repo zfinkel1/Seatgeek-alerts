@@ -68,7 +68,8 @@ def get_listings(event_url, retries=2):
     last_err = None
     for _ in range(1, retries + 1):
         try:
-            with urllib.request.urlopen(api, timeout=90) as resp:
+            # Scrapfly's anti-bot (asp) calls can run 30-120s; give them headroom.
+            with urllib.request.urlopen(api, timeout=150) as resp:
                 payload = json.loads(resp.read().decode("utf-8", "replace"))
             result = payload.get("result", {})
             if result.get("status_code") != 200:
