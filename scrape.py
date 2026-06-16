@@ -44,7 +44,7 @@ def _find_listings(o):
     return None
 
 
-def get_listings(event_url, retries=2):
+def get_listings(event_url, retries=4):
     """
     Return normalized listings for a SeatGeek event:
         {"section","price"(all-in),"qty","row","id","value","score"}
