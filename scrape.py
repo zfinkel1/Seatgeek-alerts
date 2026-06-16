@@ -1,15 +1,16 @@
 """
-SeatGeek section-level listings via Scrapfly (direct API).
+SeatGeek section-level listings via Scrapfly (session-based).
 
-The old approach drove a Bright Data remote browser to load the full event page
-and capture the event_listings_v2 XHR — SeatGeek's PerimeterX/DataDome flagged
-that fingerprint under heavy use. New approach: hit the event_listings_v2 JSON
-API DIRECTLY through Scrapfly's Anti-Scraping-Protection (asp=true). No full page
-render — much cheaper + faster, and Scrapfly fights the anti-bot for us.
+SeatGeek guards the event_listings_v2 JSON API hard — a bare request through
+Scrapfly's ASP only gets through ~28% of the time (it lacks the session cookies
+the page establishes). The fix: Scrapfly SESSIONS.
+  1. Render the full event page (render_js) under a session name — this passes
+     the anti-bot reliably and populates the session with valid cookies.
+  2. Call the event_listings_v2 API under the SAME session — it carries those
+     cookies and goes through cleanly.
 
-client_id is SeatGeek's stable public web client id (decodes to "1662|..."),
-not a session token, so it's reusable. Override via SEATGEEK_CLIENT_ID if it ever
-rotates (re-grab it from any event page's `?client_id=` XHR param).
+client_id is SeatGeek's stable public web client id; override via
+SEATGEEK_CLIENT_ID if it ever rotates.
 """
 import os
 import re
@@ -18,6 +19,7 @@ import urllib.parse
 import urllib.request
 
 SEATGEEK_CLIENT_ID = os.environ.get("SEATGEEK_CLIENT_ID", "MTY2MnwxMzgzMzIwMTU4")
+SCRAPFLY = "https://api.scrapfly.io/scrape"
 
 
 def _event_id(url):
@@ -25,8 +27,26 @@ def _event_id(url):
     return m.group(1) if m else None
 
 
+def _scrapfly_url(key, target, session, render_js=False):
+    params = {
+        "key": key,
+        "url": target,
+        "asp": "true",
+        "country": "us",
+        "session": session,
+        "session_sticky_proxy": "true",
+    }
+    if render_js:
+        params["render_js"] = "true"
+    return SCRAPFLY + "?" + urllib.parse.urlencode(params)
+
+
+def _call(url, timeout=150):
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8", "replace"))
+
+
 def _find_listings(o):
-    """Recursively find the array of listing dicts (has section `s` + a price)."""
     if isinstance(o, list) and o and isinstance(o[0], dict):
         k = o[0]
         if "s" in k and any(p in k for p in ("dp", "pf", "p", "price")):
@@ -44,11 +64,11 @@ def _find_listings(o):
     return None
 
 
-def get_listings(event_url, retries=4):
+def get_listings(event_url, retries=3):
     """
     Return normalized listings for a SeatGeek event:
         {"section","price"(all-in),"qty","row","id","value","score"}
-    Empty list if it couldn't pull them (caller decides whether to retry later).
+    Empty list if it couldn't pull them after `retries` attempts.
     """
     key = os.environ.get("SCRAPFLY_KEY")
     if not key:
@@ -59,21 +79,22 @@ def get_listings(event_url, retries=4):
         print(f"  [scrape] could not parse event id from {event_url}")
         return []
 
-    target = (f"https://seatgeek.com/api/event_listings_v2"
-              f"?id={eid}&client_id={SEATGEEK_CLIENT_ID}")
-    api = ("https://api.scrapfly.io/scrape?key=" + urllib.parse.quote(key)
-           + "&url=" + urllib.parse.quote(target, safe="")
-           + "&asp=true&country=us")
+    session = "sg" + eid
+    api_target = (f"https://seatgeek.com/api/event_listings_v2"
+                  f"?id={eid}&client_id={SEATGEEK_CLIENT_ID}")
+    page_url = _scrapfly_url(key, event_url, session, render_js=True)
+    api_url = _scrapfly_url(key, api_target, session, render_js=False)
 
     last_err = None
-    for _ in range(1, retries + 1):
+    for _ in range(retries):
         try:
-            # Scrapfly's anti-bot (asp) calls can run 30-120s; give them headroom.
-            with urllib.request.urlopen(api, timeout=150) as resp:
-                payload = json.loads(resp.read().decode("utf-8", "replace"))
+            # 1. render the event page to establish/refresh the session cookies
+            _call(page_url)
+            # 2. pull the listings API within that same session
+            payload = _call(api_url)
             result = payload.get("result", {})
             if result.get("status_code") != 200:
-                last_err = f"target status {result.get('status_code')}"
+                last_err = f"api target status {result.get('status_code')}"
                 continue
             data = json.loads(result.get("content") or "{}")
             arr = _find_listings(data) or []
