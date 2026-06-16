@@ -39,7 +39,9 @@ except Exception:
 from scrape import get_listings
 from alerts import send_alert
 
-STATE_FILE = "state.json"
+# Persist state (per-event throttle + already-alerted ids) on a Railway VOLUME if
+# one is attached, so a redeploy doesn't wipe the dedup memory and re-fire alerts.
+STATE_FILE = os.path.join(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "."), "state.json")
 SHEET_CSV_URL = os.environ.get("SHEET_CSV_URL")   # published Google Sheet CSV url
 LOCAL_WATCHLIST = "watchlist.csv"
 
