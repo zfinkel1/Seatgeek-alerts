@@ -85,42 +85,44 @@ def get_listings(event_url, retries=3):
     page_url = _scrapfly_url(key, event_url, session, render_js=True)
     api_url = _scrapfly_url(key, api_target, session, render_js=False)
 
+    def _pull():
+        # one cheap API call within the session; returns listings or None
+        payload = _call(api_url)
+        result = payload.get("result", {})
+        if result.get("status_code") != 200:
+            return None
+        data = json.loads(result.get("content") or "{}")
+        arr = _find_listings(data) or []
+        out = []
+        for L in arr:
+            price = L.get("dp") or L.get("pf") or L.get("p")
+            if price is None:
+                continue
+            dq = L.get("dq") or {}
+            score = dq.get("ddq")
+            try:
+                score = int(float(score)) if score is not None else None
+            except (TypeError, ValueError):
+                score = None
+            out.append({
+                "section": str(L.get("s") or "").strip(),
+                "price": float(price),
+                "qty": L.get("q"),
+                "row": L.get("r"),
+                "id": str(L.get("id") or f"{L.get('s')}-{price}"),
+                "value": float(dq["ev"]) if dq.get("ev") else None,
+                "score": score,
+            })
+        return out or None
+
     last_err = None
     for _ in range(retries):
         try:
-            # 1. render the event page to establish/refresh the session cookies
-            _call(page_url)
-            # 2. pull the listings API within that same session
-            payload = _call(api_url)
-            result = payload.get("result", {})
-            if result.get("status_code") != 200:
-                last_err = f"api target status {result.get('status_code')}"
-                continue
-            data = json.loads(result.get("content") or "{}")
-            arr = _find_listings(data) or []
-            out = []
-            for L in arr:
-                price = L.get("dp") or L.get("pf") or L.get("p")
-                if price is None:
-                    continue
-                dq = L.get("dq") or {}
-                score = dq.get("ddq")
-                try:
-                    score = int(float(score)) if score is not None else None
-                except (TypeError, ValueError):
-                    score = None
-                out.append({
-                    "section": str(L.get("s") or "").strip(),
-                    "price": float(price),
-                    "qty": L.get("q"),
-                    "row": L.get("r"),
-                    "id": str(L.get("id") or f"{L.get('s')}-{price}"),
-                    "value": float(dq["ev"]) if dq.get("ev") else None,
-                    "score": score,
-                })
+            _call(page_url)   # render the page to seed the session, then pull in-session
+            out = _pull()
             if out:
                 return out
-            last_err = "no listings in API response"
+            last_err = "no listings after render"
         except Exception as e:
             last_err = e
     if last_err:

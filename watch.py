@@ -26,7 +26,8 @@ import json
 import time
 import urllib.request
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
+from zoneinfo import ZoneInfo
 
 # Windows consoles default to cp1252 and choke on emoji in our log lines;
 # force UTF-8 so a print never crashes the run (no-op on Linux/Actions).
@@ -67,6 +68,15 @@ FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "2"))
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 50%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
+# Only scrape during active hours (Central time) — no point burning credits at 3am.
+ACTIVE_TZ = ZoneInfo("America/Chicago")
+ACTIVE_HOUR_START = int(os.environ.get("ACTIVE_HOUR_START", "9"))   # 9am CT
+ACTIVE_HOUR_END = int(os.environ.get("ACTIVE_HOUR_END", "20"))      # 8pm CT
+
+
+def _within_active_hours():
+    h = datetime.now(ACTIVE_TZ).hour
+    return ACTIVE_HOUR_START <= h < ACTIVE_HOUR_END
 
 
 def parse_interval(s):
@@ -283,6 +293,9 @@ def row_key(row):
 
 
 def main():
+    if not _within_active_hours():
+        print(f"[watch] outside {ACTIVE_HOUR_START}:00-{ACTIVE_HOUR_END}:00 CT window — skipping")
+        return
     wl = load_watchlist()
     state = load_state()
     now = time.time()
