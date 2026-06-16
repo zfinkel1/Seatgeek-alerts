@@ -66,7 +66,12 @@ FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
 # Compare a listing against its section NEIGHBORHOOD (this many sections on each
 # side, by section number) — adjacent sections are comparable seats and give a
 # real market, so a couple overpriced section-mates can't fake a deal.
-FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "4"))
+FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "5"))
+# A real "going rate" needs DEPTH: at least FLIP_DEPTH listings clustered within
+# FLIP_BAND of a price. A lone cheap ask sitting under a sparse ladder of pricey
+# ones (thin premium sections) has no such cluster -> not a deal, skip it.
+FLIP_DEPTH = int(os.environ.get("FLIP_DEPTH", "3"))
+FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 50%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
@@ -134,6 +139,20 @@ def _section_key(s):
         return (s, None)
     tier = re.sub(r"\s+", " ", (s[:m.start()] + " " + s[m.end():])).strip()
     return (tier, int(m.group(0)))
+
+
+def _going_rate(prices):
+    """The real resale floor: the cheapest price that has DEPTH — at least
+    FLIP_DEPTH listings within +FLIP_BAND of it. A lone cheap ask sitting under a
+    sparse ladder of pricey ones (thin premium sections like 'bullpen box 6':
+    283 then 597/701/874...) has NO such cluster, so we return None and skip it —
+    that's a wide-spread section, not a going rate you could resell into."""
+    ps = sorted(prices)
+    for p in ps:
+        hi = p * (1 + FLIP_BAND)
+        if sum(1 for q in ps if p <= q <= hi) >= FLIP_DEPTH:
+            return p
+    return None
 
 
 def effective_interval(row):
@@ -237,7 +256,9 @@ def evaluate(row, listings):
                 n = len(ps)
                 R = ps[n // 2] if n % 2 else (ps[n // 2 - 1] + ps[n // 2]) / 2
             else:
-                R = s[1]["price"]
+                R = _going_rate([L["price"] for L in s])
+                if R is None:
+                    return []   # no clustered floor -> thin/spread section, not a deal
             hits = []
             for L in s:
                 if L["price"] <= _buyline(L, R):
@@ -268,7 +289,9 @@ def evaluate(row, listings):
                     n = len(pp)
                     R = pp[n // 2] if n % 2 else (pp[n // 2 - 1] + pp[n // 2]) / 2
                 else:
-                    R = pp[1]   # 2nd-cheapest across the neighborhood = corroborated floor
+                    R = _going_rate(pp)   # clustered floor across the neighborhood
+                    if R is None:
+                        return []          # no real cluster -> not a deal
                 hits = []
                 for L in own:
                     if L["price"] <= _buyline(L, R):
