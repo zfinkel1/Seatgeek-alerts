@@ -117,6 +117,25 @@ def _section_num(s):
     return None
 
 
+def _section_key(s):
+    """(tier, number) for a section. The number lets us group ADJACENT sections;
+    the tier keeps different price areas apart so we never value a 'club box
+    infield' seat off a bleacher/'108' seat. Most real venues (Wrigley etc.) name
+    their sections — 'club box infield 8' must compare to club box infield 6-10,
+    not just its own thin listings.
+        '108'                              -> ('', 108)
+        'club box infield 8'               -> ('club box infield', 8)
+        'james hardie catalina club 315 left' -> ('james hardie catalina club left', 315)
+        'eero club'                        -> ('eero club', None)   # no number -> by-name
+    """
+    s = (s or "").strip().lower()
+    m = re.search(r"\d+", s)
+    if not m:
+        return (s, None)
+    tier = re.sub(r"\s+", " ", (s[:m.start()] + " " + s[m.end():])).strip()
+    return (tier, int(m.group(0)))
+
+
 def effective_interval(row):
     """Cadence for a row. every=auto ramps by days-to-event:
     >7d -> hourly, <=7d -> 10min (HOT), <=1d (game day) -> 5min, past -> dormant.
@@ -235,11 +254,11 @@ def evaluate(row, listings):
                   # "going rate" has real data and a couple overpriced section-mates
                   # can't fake a deal (the false-positive we saw: $1160 looked cheap vs
                   # its own thin section, but section 128 next door was also $1160).
-            by_num = defaultdict(list)
-            by_name = defaultdict(list)
+            by_key = defaultdict(list)   # (tier, num) -> listings (numbered + named-with-number)
+            by_name = defaultdict(list)  # numberless areas -> own-name pool only
             for L in candidates:
-                num = _section_num(L["section"])
-                (by_num[num] if num is not None else by_name[L["section"].lower()]).append(L)
+                tier, num = _section_key(L["section"])
+                (by_name[tier] if num is None else by_key[(tier, num)]).append(L)
 
             def neighborhood_deal(own, pool):
                 if len(pool) < FLIP_MIN_LISTINGS:
@@ -260,12 +279,12 @@ def evaluate(row, listings):
                 return [max(hits, key=lambda h: h["flip_pct"])] if hits else []
 
             deals = []
-            for num, group in by_num.items():
-                pool = []
+            for (tier, num), group in by_key.items():
+                pool = []   # this section + its same-tier neighbors within +-ADJ
                 for nn in range(num - FLIP_ADJ_SECTIONS, num + FLIP_ADJ_SECTIONS + 1):
-                    pool += by_num.get(nn, [])
+                    pool += by_key.get((tier, nn), [])
                 deals += neighborhood_deal(group, pool)
-            for name, group in by_name.items():   # named areas: same-name pool only
+            for name, group in by_name.items():   # numberless areas: same-name pool only
                 deals += section_deals(group)
         deals.sort(key=lambda L: -L["flip_pct"])  # best flip first
         return deals, None, candidates
