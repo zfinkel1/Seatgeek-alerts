@@ -75,6 +75,10 @@ FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 50%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
+# Don't alert on a buy above this price — keeps you on cheaper, faster-moving
+# inventory and off illiquid premium seats (real deals, but slow to flip + big
+# capital). Set FLIP_MAX_BUY=0 to disable the ceiling.
+FLIP_MAX_BUY = float(os.environ.get("FLIP_MAX_BUY", "400"))
 # Only scrape during active hours (Central time) — no point burning credits at 3am.
 ACTIVE_TZ = ZoneInfo("America/Chicago")
 ACTIVE_HOUR_START = int(os.environ.get("ACTIVE_HOUR_START", "9"))   # 9am CT
@@ -309,6 +313,8 @@ def evaluate(row, listings):
                 deals += neighborhood_deal(group, pool)
             for name, group in by_name.items():   # numberless areas: same-name pool only
                 deals += section_deals(group)
+        if FLIP_MAX_BUY:
+            deals = [d for d in deals if d["price"] <= FLIP_MAX_BUY]  # buy-price ceiling
         deals.sort(key=lambda L: -L["flip_pct"])  # best flip first
         return deals, None, candidates
     if typ == "%":
