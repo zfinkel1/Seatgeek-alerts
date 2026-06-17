@@ -75,9 +75,10 @@ FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 50%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
-# Don't alert on a buy above this price — keeps you on cheaper, faster-moving
-# inventory and off illiquid premium seats (real deals, but slow to flip + big
-# capital). Set FLIP_MAX_BUY=0 to disable the ceiling.
+# Buy-price ceiling — BASEBALL ONLY. Don't alert on an MLB buy above this price
+# (keeps you on cheaper, faster-moving seats, off illiquid premium ones). NOT
+# applied to concerts — e.g. Morgan Wallen's get-in is already >$400, so a cap
+# would kill every concert flip. Set FLIP_MAX_BUY=0 to disable entirely.
 FLIP_MAX_BUY = float(os.environ.get("FLIP_MAX_BUY", "400"))
 # Only scrape during active hours (Central time) — no point burning credits at 3am.
 ACTIVE_TZ = ZoneInfo("America/Chicago")
@@ -313,8 +314,10 @@ def evaluate(row, listings):
                 deals += neighborhood_deal(group, pool)
             for name, group in by_name.items():   # numberless areas: same-name pool only
                 deals += section_deals(group)
-        if FLIP_MAX_BUY:
-            deals = [d for d in deals if d["price"] <= FLIP_MAX_BUY]  # buy-price ceiling
+        # buy-price ceiling — BASEBALL ONLY (concerts have a higher floor, e.g.
+        # Morgan Wallen get-in >$400, so a cap would kill every concert flip).
+        if FLIP_MAX_BUY and "/mlb/" in (row.get("url") or "").lower():
+            deals = [d for d in deals if d["price"] <= FLIP_MAX_BUY]
         deals.sort(key=lambda L: -L["flip_pct"])  # best flip first
         return deals, None, candidates
     if typ == "%":
