@@ -116,7 +116,7 @@ def _event_date(url):
             return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             pass
-    m = re.search(r"(?:^|/)(\d{1,2})-(\d{1,2})-(20\d\d)", url)
+    m = re.search(r"(?:^|[/-])(\d{1,2})-(\d{1,2})-(20\d\d)", url)
     if m:
         try:
             return date(int(m.group(3)), int(m.group(1)), int(m.group(2)))
