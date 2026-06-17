@@ -36,8 +36,18 @@ try:
 except Exception:
     pass
 
-from scrape import get_listings
+from scrape import get_listings as _seatgeek_listings
+from stubhub import get_listings as _stubhub_listings
 from alerts import send_alert, poll_ignores, mute_key, event_id_from_url
+
+
+def get_listings(url):
+    """Route to the right scraper by the event URL's site. Both return the same
+    normalized shape {section, price, qty, row, id, value, score}, so the flip
+    engine and everything downstream are source-agnostic."""
+    if "stubhub.com" in (url or "").lower():
+        return _stubhub_listings(url)
+    return _seatgeek_listings(url)
 
 # Persist state (per-event throttle + already-alerted ids) on a Railway VOLUME if
 # one is attached, so a redeploy doesn't wipe the dedup memory and re-fire alerts.
