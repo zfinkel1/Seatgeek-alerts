@@ -10,7 +10,10 @@ import urllib.parse
 import urllib.request
 
 SENDGRID_API_KEY = os.environ.get("SENDGRID_API_KEY")
-ALERT_EMAIL = os.environ.get("ALERT_EMAIL")          # zfinkel1@gmail.com
+ALERT_EMAIL = os.environ.get("ALERT_EMAIL")          # zfinkel1@gmail.com (comma-separated OK)
+# Standing extra recipients (teammates) CC'd on every email alert. Comma-separated,
+# overridable via ALERT_EMAIL_CC. Defaults to the Gold Coast Tickets desk.
+ALERT_EMAIL_CC = os.environ.get("ALERT_EMAIL_CC", "SSharrin@GoldCoastTickets.com")
 ALERT_PHONE = os.environ.get("ALERT_PHONE")          # 10-digit or +1...; the destination
 FROM_EMAIL = os.environ.get("FROM_EMAIL", ALERT_EMAIL)  # verified SendGrid sender
 
@@ -28,11 +31,13 @@ TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 
 def _send(to_addr, subject, body):
-    if not (SENDGRID_API_KEY and FROM_EMAIL and to_addr):
+    # to_addr may be one address or several, comma/semicolon-separated.
+    recipients = [a.strip() for a in (to_addr or "").replace(";", ",").split(",") if a.strip()]
+    if not (SENDGRID_API_KEY and FROM_EMAIL and recipients):
         print(f"  [alert] missing creds, would send to {to_addr}: {subject}")
         return
     payload = {
-        "personalizations": [{"to": [{"email": to_addr}]}],
+        "personalizations": [{"to": [{"email": a} for a in recipients]}],
         "from": {"email": FROM_EMAIL},
         "subject": subject,
         "content": [{"type": "text/plain", "value": body}],
@@ -48,7 +53,7 @@ def _send(to_addr, subject, body):
     )
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
-            print(f"  [alert] sent to {to_addr} ({r.status})")
+            print(f"  [alert] sent to {', '.join(recipients)} ({r.status})")
     except Exception as e:
         print(f"  [alert] send failed to {to_addr}: {e}")
 
@@ -193,7 +198,8 @@ def send_alert(label, event_url, listing, limit):
         )
         sms_body = f"{label}: {sec}{row_txt} ${price:.0f}{qty_txt}\n{event_url}"
 
-    if ALERT_EMAIL:
-        _send(ALERT_EMAIL, subject, body)
+    email_to = ",".join(a for a in (ALERT_EMAIL, ALERT_EMAIL_CC) if a)
+    if email_to:
+        _send(email_to, subject, body)
     _send_telegram(body, mute_target=mute_key(event_id_from_url(event_url), listing["section"]))
     _send_sms(sms_body)
