@@ -66,6 +66,12 @@ DEFAULT_INTERVAL = 1800  # 30 min if "every" is blank/unrecognized
 # Prevents a flood when many listings sit under the threshold — you only care
 # about the best deals, not every seat. Override via env if you ever want more.
 MAX_ALERTS = int(os.environ.get("MAX_ALERTS_PER_CHECK", "3"))
+# Don't re-alert the SAME deal (event+section+row+price) within this many hours,
+# even if it flickers out of the scrape and back. StubHub re-keys its listing id
+# as the cheapest offering in a section rotates, which spammed 4 emails for one
+# $37 listing. A genuine price DROP makes a new signature and alerts immediately;
+# mute a section to silence it entirely.
+ALERT_COOLDOWN_HRS = float(os.environ.get("ALERT_COOLDOWN_HRS", "12"))
 
 # Resale fee/haircut you lose when you re-sell a flipped ticket (SeatGeek/StubHub).
 # Used by "flip" mode to guarantee the net margin after fees. Default 15%.
@@ -413,6 +419,19 @@ def row_key(row):
     return f"{event_id(row['url'])}|{sec}|{typ}{thr}"
 
 
+def deal_sig(eid, L):
+    """Stable identity for a deal so a platform's listing-id churn (StubHub re-keys
+    ticketClassId as the cheapest offering rotates) can't re-alert the same seat at
+    the same price. Price IS included, so a genuine drop makes a new sig + re-alerts."""
+    sec = re.sub(r"\s+", " ", str(L.get("section") or "")).strip().lower()
+    rw = re.sub(r"\s+", " ", str(L.get("row") or "")).strip().lower()
+    try:
+        price = round(float(L.get("price") or 0))
+    except (TypeError, ValueError):
+        price = 0
+    return f"{eid}|{sec}|{rw}|{price}"
+
+
 def main():
     # Read 'Mute this section' taps every loop (even off-hours) so mutes register
     # promptly; then bail if we're outside active hours.
@@ -474,7 +493,14 @@ def main():
                 scrape_cache[murl] = get_listings(murl)
             mlist = scrape_cache[murl] or None
         matches, limit, candidates = evaluate(row, listings, mirror_listings=mlist)
-        alerted = set(est["alerted"])
+        # seen = {deal signature -> last-alerted epoch}. Cooldown-based so a deal that
+        # flickers in and out of the scrape (or gets re-keyed by the platform) can't
+        # re-spam. Migrate off the old list-of-ids schema on first run.
+        seen = est.get("seen")
+        if not isinstance(seen, dict):
+            seen = {}
+            est["seen"] = seen
+        cooldown = ALERT_COOLDOWN_HRS * 3600
         ignored = set(state.get("ignored", []))
         eid = event_id_from_url(url)
         cheapest = min(candidates, key=lambda L: L["price"]) if candidates else None
@@ -483,23 +509,24 @@ def main():
             print(f"   cheapest watched: {cheapest['section']} ${cheapest['price']:.0f}{lim} · {len(matches)} deal(s)")
         sent = 0
         for L in matches:
+            sig = deal_sig(eid, L)
             if mute_key(eid, L["section"]) in ignored:
-                est["alerted"].append(L["id"])  # muted section -> record as seen, never alert
+                seen[sig] = now  # muted section -> record as seen, never alert
                 continue
-            if L["id"] in alerted:
-                continue
+            if now - seen.get(sig, 0) < cooldown:
+                continue  # alerted this same deal recently -> stay quiet
             if sent < MAX_ALERTS:
                 print(f"   ALERT {L['section']} ${L['price']:.0f}")
                 send_alert(label, row["url"], L, limit)
                 sent += 1
             # mark seen even when not sent, so a big match-set never floods:
             # you get the cheapest MAX, the rest are recorded silently.
-            est["alerted"].append(L["id"])
+            seen[sig] = now
         if sent:
             print(f"   sent {sent} alert(s) (cheapest first, capped at {MAX_ALERTS})")
-        # prune alerted ids no longer present so a re-listing re-alerts
-        present = {L["id"] for L in candidates}
-        est["alerted"] = [i for i in est["alerted"] if i in present]
+        # bound state: drop signatures untouched for a week (past any cooldown)
+        cutoff = now - max(cooldown, 7 * 86400)
+        est["seen"] = {k: v for k, v in seen.items() if v >= cutoff}
 
     save_state(state)
     print("[watch] done")
