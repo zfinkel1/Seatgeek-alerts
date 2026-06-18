@@ -90,6 +90,12 @@ FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
 # applied to concerts — e.g. Morgan Wallen's get-in is already >$400, so a cap
 # would kill every concert flip. Set FLIP_MAX_BUY=0 to disable entirely.
 FLIP_MAX_BUY = float(os.environ.get("FLIP_MAX_BUY", "400"))
+# Sections to NEVER alert on (founder excluded — the field-level club/bullpen
+# boxes that produced bad buys). Matched by the section NUMBER via _section_key,
+# so "club box infield 8", "bullpen box 6", "makers mark barrel room 27" all
+# match 8/6/27 — but "108"/"208" do NOT (that's the whole number, not a digit).
+# Override via EXCLUDE_SECTIONS (comma-separated numbers; empty = exclude none).
+EXCLUDE_SECTION_NUMS = {int(n) for n in re.findall(r"\d+", os.environ.get("EXCLUDE_SECTIONS", "3,4,5,6,7,8,27,28,29,30,31,32"))}
 # Only scrape during active hours (Central time) — no point burning credits at 3am.
 ACTIVE_TZ = ZoneInfo("America/Chicago")
 ACTIVE_HOUR_START = int(os.environ.get("ACTIVE_HOUR_START", "9"))   # 9am CT
@@ -241,6 +247,10 @@ def evaluate(row, listings):
     #   "pit, floor a, floor b"  -> watch any of them in one row
     secs = [s.strip() for s in re.split(r"[,|]", sec) if s.strip()]
     candidates = [L for L in listings if any(s in L["section"].lower() for s in secs)] if secs else listings
+    # Drop excluded sections entirely — they never alert AND never count toward a
+    # neighbor's going rate, so a bad premium box can't skew nearby sections either.
+    if EXCLUDE_SECTION_NUMS:
+        candidates = [L for L in candidates if _section_key(L["section"])[1] not in EXCLUDE_SECTION_NUMS]
     if not candidates:
         return [], None, []
     thr = float(row["threshold"])
