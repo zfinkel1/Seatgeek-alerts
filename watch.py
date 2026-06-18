@@ -176,6 +176,31 @@ def _going_rate(prices):
     return None
 
 
+def section_market_rate(listings, section, patient=False):
+    """The going rate for `section`'s neighborhood within ONE platform's listings —
+    used to sanity-check the OTHER platform's resale reference. Matches by section
+    NUMBER (+-FLIP_ADJ), ignoring tier-name strings, because the two sites label the
+    same seats differently ('446' vs 'Section 446'). Returns None for numberless
+    areas or a pool too thin to trust. Mirrors _going_rate / the neighborhood pool."""
+    if not listings:
+        return None
+    _, num = _section_key(section)
+    if num is None:
+        return None  # numberless area -> can't reliably cross-match across platforms
+    pool = []
+    for L in listings:
+        n = _section_key(L["section"])[1]
+        if n is not None and abs(n - num) <= FLIP_ADJ_SECTIONS:
+            pool.append(L)
+    if len(pool) < FLIP_MIN_LISTINGS:
+        return None
+    pp = sorted(x["price"] for x in pool)
+    if patient:
+        n = len(pp)
+        return pp[n // 2] if n % 2 else (pp[n // 2 - 1] + pp[n // 2]) / 2
+    return _going_rate(pp)
+
+
 def effective_interval(row):
     """Cadence for a row. every=auto ramps by days-to-event:
     >7d -> hourly, <=7d -> 10min (HOT), <=1d (game day) -> 5min, past -> dormant.
@@ -238,8 +263,10 @@ def save_state(state):
     json.dump(state, open(STATE_FILE, "w"), indent=2)
 
 
-def evaluate(row, listings):
-    """Return (matches, limit, all_candidates). matches = listings at/under the limit."""
+def evaluate(row, listings, mirror_listings=None):
+    """Return (matches, limit, all_candidates). matches = listings at/under the limit.
+    mirror_listings = the SAME event's listings on the OTHER platform (StubHub<->
+    SeatGeek), used to cross-check flip resale prices against the real market."""
     if not listings:
         return [], None, []
     sec = row.get("section", "").strip().lower()
@@ -338,6 +365,27 @@ def evaluate(row, listings):
         # Morgan Wallen get-in >$400, so a cap would kill every concert flip).
         if FLIP_MAX_BUY and "/mlb/" in (row.get("url") or "").lower():
             deals = [d for d in deals if d["price"] <= FLIP_MAX_BUY]
+        # Cross-platform reality check. A platform's resale "going rate" can be a
+        # wall of overpriced, NON-clearing inventory: StubHub showed a $454 cluster
+        # in section 446 while SeatGeek cleared the same seats at ~$262, so a $259
+        # StubHub buy looked like a +49% flip but really nets a LOSS. Cap each deal's
+        # resale by the same section's going rate on the mirror platform and re-test
+        # the buy-line — a flip survives only if it clears against the CHEAPER of the
+        # two markets (the price a buyer would actually pay).
+        if mirror_listings:
+            kept = []
+            for d in deals:
+                mR = section_market_rate(mirror_listings, d["section"], patient)
+                if mR is not None and mR < d["resale"]:
+                    m = single_margin if d.get("qty") == 1 else margin
+                    if d["price"] > mR * (1 - fee) / (1 + m):
+                        print(f"   x cross-platform: {d['section']} ${d['price']:.0f} — "
+                              f"mirror going rate ${mR:.0f} (this platform claimed ${d['resale']:.0f}); skip")
+                        continue
+                    d["resale"] = mR
+                    d["flip_pct"] = (mR * (1 - fee) - d["price"]) / d["price"] * 100
+                kept.append(d)
+            deals = kept
         deals.sort(key=lambda L: -L["flip_pct"])  # best flip first
         return deals, None, candidates
     if typ == "%":
@@ -380,6 +428,26 @@ def main():
     now = time.time()
     print(f"[watch] {len(wl)} active rows")
 
+    # Pair each event with its mirror on the OTHER ticket site (same show, other
+    # platform) so flips get sanity-checked against the real cross-market price.
+    # Pairing is by the row label with the platform tag stripped: "Cubs 6/20" and
+    # "Cubs 6/20 SH" -> same base -> mirrors. No label or no mirror -> no check.
+    def _platform(u):
+        u = (u or "").lower()
+        return "sh" if "stubhub.com" in u else ("sg" if "seatgeek.com" in u else "?")
+    def _base_label(r):
+        b = re.sub(r"\b(sh|stubhub|sg|seatgeek)\b", "", (r.get("label") or "").lower())
+        return re.sub(r"\s+", " ", b).strip()
+    by_base = defaultdict(dict)  # base label -> {platform: url}
+    for r in wl:
+        b = _base_label(r)
+        if b:
+            by_base[b][_platform(r["url"])] = r["url"]
+    def _mirror_url(r):
+        plat = _platform(r["url"])
+        other = "sg" if plat == "sh" else "sh"
+        return by_base.get(_base_label(r), {}).get(other)
+
     scrape_cache = {}  # url -> listings; scrape each event at most once per run
 
     for row in wl:
@@ -398,7 +466,14 @@ def main():
         if not listings:
             print("   no listings pulled (will retry next due cycle)")
             continue
-        matches, limit, candidates = evaluate(row, listings)
+        # mirror event on the other platform (cached; scraped at most once/run)
+        murl = _mirror_url(row)
+        mlist = None
+        if murl:
+            if murl not in scrape_cache:
+                scrape_cache[murl] = get_listings(murl)
+            mlist = scrape_cache[murl] or None
+        matches, limit, candidates = evaluate(row, listings, mirror_listings=mlist)
         alerted = set(est["alerted"])
         ignored = set(state.get("ignored", []))
         eid = event_id_from_url(url)
