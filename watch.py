@@ -89,8 +89,8 @@ FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "5"))
 FLIP_DEPTH = int(os.environ.get("FLIP_DEPTH", "3"))
 FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
-# than the row's normal threshold (pairs). Default 50%.
-FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "50"))
+# than the row's normal threshold (pairs). Default 100%.
+FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "100"))
 # Buy-price ceiling — BASEBALL ONLY. Don't alert on an MLB buy above this price
 # (keeps you on cheaper, faster-moving seats, off illiquid premium ones). NOT
 # applied to concerts — e.g. Morgan Wallen's get-in is already >$400, so a cap
