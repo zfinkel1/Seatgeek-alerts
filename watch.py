@@ -91,11 +91,10 @@ FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 100%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "100"))
-# Buy-price ceiling — BASEBALL ONLY. Don't alert on an MLB buy above this price
-# (keeps you on cheaper, faster-moving seats, off illiquid premium ones). NOT
-# applied to concerts — e.g. Morgan Wallen's get-in is already >$400, so a cap
-# would kill every concert flip. Set FLIP_MAX_BUY=0 to disable entirely.
-FLIP_MAX_BUY = float(os.environ.get("FLIP_MAX_BUY", "400"))
+# Buy-price ceiling — BASEBALL ONLY. 0 = DISABLED (no cap) — premium high-dollar
+# MLB flips can fire. (Was $400 to stay on cheaper/faster seats; founder removed it
+# 2026-06-26 to capture the big-margin premium plays.) Set a $ value to re-enable.
+FLIP_MAX_BUY = float(os.environ.get("FLIP_MAX_BUY", "0"))
 # Sections to NEVER alert on (founder excluded — the field-level club/bullpen
 # boxes that produced bad buys). Matched by the section NUMBER via _section_key,
 # so "club box infield 8", "bullpen box 6", "makers mark barrel room 27" all
