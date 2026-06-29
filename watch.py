@@ -91,6 +91,14 @@ FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Default 100%.
 FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "100"))
+# NFL stadiums are huge (60k+) with dozens of thinly-listed sections, so the tight-
+# venue defaults above fired off fake floors built from a handful of asks. NFL needs
+# MORE comparables, drawn from TRULY adjacent seats, before any deal qualifies:
+# require 6 listings within +-2 sections of the target. Applied only to /nfl/ event
+# URLs — baseball/concerts keep the defaults that are already dialed in.
+NFL_FLIP_MIN_LISTINGS = int(os.environ.get("NFL_FLIP_MIN_LISTINGS", "6"))
+NFL_FLIP_DEPTH = int(os.environ.get("NFL_FLIP_DEPTH", "3"))
+NFL_FLIP_ADJ_SECTIONS = int(os.environ.get("NFL_FLIP_ADJ_SECTIONS", "2"))
 # Buy-price ceiling — BASEBALL ONLY. 0 = DISABLED (no cap) — premium high-dollar
 # MLB flips can fire. (Was $400 to stay on cheaper/faster seats; founder removed it
 # 2026-06-26 to capture the big-margin premium plays.) Set a $ value to re-enable.
@@ -167,26 +175,31 @@ def _section_key(s):
     return (tier, int(m.group(0)))
 
 
-def _going_rate(prices):
+def _going_rate(prices, depth=None):
     """The real resale floor: the cheapest price that has DEPTH — at least
-    FLIP_DEPTH listings within +FLIP_BAND of it. A lone cheap ask sitting under a
+    `depth` listings within +FLIP_BAND of it. A lone cheap ask sitting under a
     sparse ladder of pricey ones (thin premium sections like 'bullpen box 6':
     283 then 597/701/874...) has NO such cluster, so we return None and skip it —
-    that's a wide-spread section, not a going rate you could resell into."""
+    that's a wide-spread section, not a going rate you could resell into.
+    `depth` defaults to FLIP_DEPTH; NFL passes a higher bar for more comparables."""
+    depth = FLIP_DEPTH if depth is None else depth
     ps = sorted(prices)
     for p in ps:
         hi = p * (1 + FLIP_BAND)
-        if sum(1 for q in ps if p <= q <= hi) >= FLIP_DEPTH:
+        if sum(1 for q in ps if p <= q <= hi) >= depth:
             return p
     return None
 
 
-def section_market_rate(listings, section, patient=False):
+def section_market_rate(listings, section, patient=False, adj=None, min_listings=None, depth=None):
     """The going rate for `section`'s neighborhood within ONE platform's listings —
     used to sanity-check the OTHER platform's resale reference. Matches by section
-    NUMBER (+-FLIP_ADJ), ignoring tier-name strings, because the two sites label the
+    NUMBER (+-adj), ignoring tier-name strings, because the two sites label the
     same seats differently ('446' vs 'Section 446'). Returns None for numberless
-    areas or a pool too thin to trust. Mirrors _going_rate / the neighborhood pool."""
+    areas or a pool too thin to trust. Mirrors _going_rate / the neighborhood pool.
+    adj/min_listings/depth default to the globals; NFL passes tighter values."""
+    adj = FLIP_ADJ_SECTIONS if adj is None else adj
+    min_listings = FLIP_MIN_LISTINGS if min_listings is None else min_listings
     if not listings:
         return None
     _, num = _section_key(section)
@@ -195,15 +208,15 @@ def section_market_rate(listings, section, patient=False):
     pool = []
     for L in listings:
         n = _section_key(L["section"])[1]
-        if n is not None and abs(n - num) <= FLIP_ADJ_SECTIONS:
+        if n is not None and abs(n - num) <= adj:
             pool.append(L)
-    if len(pool) < FLIP_MIN_LISTINGS:
+    if len(pool) < min_listings:
         return None
     pp = sorted(x["price"] for x in pool)
     if patient:
         n = len(pp)
         return pp[n // 2] if n % 2 else (pp[n // 2 - 1] + pp[n // 2]) / 2
-    return _going_rate(pp)
+    return _going_rate(pp, depth)
 
 
 def effective_interval(row):
@@ -295,6 +308,12 @@ def evaluate(row, listings, mirror_listings=None):
         margin = thr / 100.0
         single_margin = FLIP_SINGLE_MARGIN / 100.0
         patient = "pat" in typ
+        # NFL needs more comparables from truly-adjacent seats — use the NFL gates
+        # for /nfl/ events, the dialed-in defaults for everything else.
+        is_nfl = "/nfl/" in (row.get("url") or "").lower()
+        min_listings = NFL_FLIP_MIN_LISTINGS if is_nfl else FLIP_MIN_LISTINGS
+        depth = NFL_FLIP_DEPTH if is_nfl else FLIP_DEPTH
+        adj = NFL_FLIP_ADJ_SECTIONS if is_nfl else FLIP_ADJ_SECTIONS
 
         def _buyline(L, R):
             # singles (qty 1) are harder to resell -> demand a bigger margin -> a lower
@@ -309,14 +328,14 @@ def evaluate(row, listings, mirror_listings=None):
             # now) or the median (patient). Liquidity-gated so a thin or mostly-
             # overpriced section can't manufacture a fake deal.
             s = sorted(group, key=lambda L: L["price"])
-            if len(s) < FLIP_MIN_LISTINGS:
+            if len(s) < min_listings:
                 return []
             if patient:
                 ps = [L["price"] for L in s]
                 n = len(ps)
                 R = ps[n // 2] if n % 2 else (ps[n // 2 - 1] + ps[n // 2]) / 2
             else:
-                R = _going_rate([L["price"] for L in s])
+                R = _going_rate([L["price"] for L in s], depth)
                 if R is None:
                     return []   # no clustered floor -> thin/spread section, not a deal
             hits = []
@@ -342,14 +361,14 @@ def evaluate(row, listings, mirror_listings=None):
                 (by_name[tier] if num is None else by_key[(tier, num)]).append(L)
 
             def neighborhood_deal(own, pool):
-                if len(pool) < FLIP_MIN_LISTINGS:
+                if len(pool) < min_listings:
                     return []
                 pp = sorted(x["price"] for x in pool)
                 if patient:
                     n = len(pp)
                     R = pp[n // 2] if n % 2 else (pp[n // 2 - 1] + pp[n // 2]) / 2
                 else:
-                    R = _going_rate(pp)   # clustered floor across the neighborhood
+                    R = _going_rate(pp, depth)   # clustered floor across the neighborhood
                     if R is None:
                         return []          # no real cluster -> not a deal
                 hits = []
@@ -363,8 +382,8 @@ def evaluate(row, listings, mirror_listings=None):
 
             deals = []
             for (tier, num), group in by_key.items():
-                pool = []   # this section + its same-tier neighbors within +-ADJ
-                for nn in range(num - FLIP_ADJ_SECTIONS, num + FLIP_ADJ_SECTIONS + 1):
+                pool = []   # this section + its same-tier neighbors within +-adj
+                for nn in range(num - adj, num + adj + 1):
                     pool += by_key.get((tier, nn), [])
                 deals += neighborhood_deal(group, pool)
             for name, group in by_name.items():   # numberless areas: same-name pool only
@@ -383,7 +402,7 @@ def evaluate(row, listings, mirror_listings=None):
         if mirror_listings:
             kept = []
             for d in deals:
-                mR = section_market_rate(mirror_listings, d["section"], patient)
+                mR = section_market_rate(mirror_listings, d["section"], patient, adj, min_listings, depth)
                 if mR is not None and mR < d["resale"]:
                     m = single_margin if d.get("qty") == 1 else margin
                     if d["price"] > mR * (1 - fee) / (1 + m):
