@@ -315,6 +315,26 @@ def evaluate(row, listings, mirror_listings=None):
         depth = NFL_FLIP_DEPTH if is_nfl else FLIP_DEPTH
         adj = NFL_FLIP_ADJ_SECTIONS if is_nfl else FLIP_ADJ_SECTIONS
 
+        # Same-level reality check. The tight neighborhood can call a lone cheap
+        # listing a deal vs a pricey cluster in ITS section, while the whole level is
+        # full of cheaper comparable seats in adjacent sections (the C141 $646-vs-
+        # $1529 false alert: $646 was market price — the level was packed with
+        # $462-691 asks). Group every candidate by section TIER (the non-number
+        # prefix, so all "c1xx" field seats share a level) and refuse to call a
+        # listing a flip when `depth`+ comparable same-tier seats already sit at/under
+        # its price — you could never resell high when cheaper equivalents are there.
+        tier_prices = defaultdict(list)
+        for L in candidates:
+            tier_prices[_section_key(L["section"])[0]].append(L["price"])
+        for _t in tier_prices:
+            tier_prices[_t].sort()
+
+        def _scarce_enough(L):
+            tier = _section_key(L["section"])[0]
+            ceiling = L["price"] * 1.05
+            at_or_below = sum(1 for p in tier_prices.get(tier, ()) if p <= ceiling)
+            return at_or_below <= depth   # itself + up to (depth-1) others; more = not scarce
+
         def _buyline(L, R):
             # singles (qty 1) are harder to resell -> demand a bigger margin -> a lower
             # buy price to qualify. Everything else uses the row's normal margin.
@@ -340,7 +360,7 @@ def evaluate(row, listings, mirror_listings=None):
                     return []   # no clustered floor -> thin/spread section, not a deal
             hits = []
             for L in s:
-                if L["price"] <= _buyline(L, R):
+                if L["price"] <= _buyline(L, R) and _scarce_enough(L):
                     h = dict(L)
                     h["resale"] = R
                     h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
@@ -373,7 +393,7 @@ def evaluate(row, listings, mirror_listings=None):
                         return []          # no real cluster -> not a deal
                 hits = []
                 for L in own:
-                    if L["price"] <= _buyline(L, R):
+                    if L["price"] <= _buyline(L, R) and _scarce_enough(L):
                         h = dict(L)
                         h["resale"] = R
                         h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
