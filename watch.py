@@ -166,10 +166,19 @@ def _section_key(s):
         'club box infield 8'               -> ('club box infield', 8)
         'james hardie catalina club 315 left' -> ('james hardie catalina club left', 315)
         'eero club'                        -> ('eero club', None)   # no number -> by-name
+        'philadelphia insurance club g'    -> ('philadelphia insurance club', 7)  # letter index
+        'floor a'                          -> ('floor', 1)
     """
     s = (s or "").strip().lower()
     m = re.search(r"\d+", s)
     if not m:
+        # No number — but lettered sections (Club C/D/E/F/G, Floor A/B) use a
+        # TRAILING single letter as their index. Treat it like a number (a=1..z=26)
+        # so adjacent lettered sections in the same area pool as comparable seats
+        # instead of each letter being its own isolated silo.
+        lm = re.search(r"(?:^|\s)([a-z])\s*$", s)
+        if lm:
+            return (s[:lm.start(1)].strip(), ord(lm.group(1)) - ord("a") + 1)
         return (s, None)
     tier = re.sub(r"\s+", " ", (s[:m.start()] + " " + s[m.end():])).strip()
     return (tier, int(m.group(0)))
