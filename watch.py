@@ -561,15 +561,26 @@ def main():
         sent = 0
         for L in matches:
             sig = deal_sig(eid, L)
+            # Per-section key (event + normalized section, ignoring row/price) so we
+            # can rate-limit a whole section, not just one exact deal signature.
+            sect_key = "SECT|" + str(eid) + "|" + re.sub(r"\s+", " ", str(L.get("section") or "")).strip().lower()
             if mute_key(eid, L["section"]) in ignored:
                 seen[sig] = now  # muted section -> record as seen, never alert
                 continue
             if now - seen.get(sig, 0) < cooldown:
                 continue  # alerted this same deal recently -> stay quiet
+            # Per-SECTION cooldown: a hot section's cheapest seat churns (one sells,
+            # the next relists a few dollars off), making a fresh deal_sig each time
+            # and spamming the same section 3x a day. Cap it: once a section alerts,
+            # stay quiet on it for the whole cooldown window regardless of price wiggle.
+            if now - seen.get(sect_key, 0) < cooldown:
+                seen[sig] = now
+                continue
             if sent < MAX_ALERTS:
                 print(f"   ALERT {L['section']} ${L['price']:.0f}")
                 send_alert(label, row["url"], L, limit)
                 sent += 1
+                seen[sect_key] = now  # start this section's cooldown (only on a real send)
             # mark seen even when not sent, so a big match-set never floods:
             # you get the cheapest MAX, the rest are recorded silently.
             seen[sig] = now
