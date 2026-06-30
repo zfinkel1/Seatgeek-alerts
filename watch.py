@@ -89,8 +89,9 @@ FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "5"))
 FLIP_DEPTH = int(os.environ.get("FLIP_DEPTH", "3"))
 FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
-# than the row's normal threshold (pairs). Default 100%.
-FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "100"))
+# than the row's normal threshold (pairs). Lowered 100 -> 75 (2026-06-30 test, more
+# volume) now that the going-rate comps are accurate; revert to 100 if singles get noisy.
+FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "75"))
 # NFL stadiums are huge (60k+) with dozens of thinly-listed sections, so the tight-
 # venue defaults above fired off fake floors built from a handful of asks. NFL needs
 # MORE comparables, drawn from TRULY adjacent seats, before any deal qualifies:
