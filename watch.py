@@ -231,7 +231,7 @@ def section_market_rate(listings, section, patient=False, adj=None, min_listings
 
 def effective_interval(row):
     """Cadence for a row. every=auto ramps by days-to-event:
-    <=7d (game day + week of) -> 10min, 8-21d -> 6h, 22+d -> daily, past -> dormant.
+    <=7d (game day + week of) -> 10min, 8-30d -> 3h, 31+d -> 8h, past -> dormant.
     10min in the hot window is frequent enough to catch a price drop but slow
     enough to keep the credit bill sane across a big watchlist; far-out slows way
     down because distant prices barely move. Any other 'every' value is a fixed
@@ -247,9 +247,9 @@ def effective_interval(row):
         return 30 * 86400   # event passed -> effectively off
     if days <= 7:
         return 600          # game day + week of -> 10min
-    if days <= 21:
-        return 6 * 3600     # 8-21 days -> every 6h
-    return 86400            # 22+ days -> daily
+    if days <= 30:
+        return 3 * 3600     # 8-30 days -> every 3h
+    return 8 * 3600         # 31+ days -> every 8h
 
 
 def event_id(url):
