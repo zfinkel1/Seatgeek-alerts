@@ -110,11 +110,12 @@ FLIP_MAX_BUY = float(os.environ.get("FLIP_MAX_BUY", "0"))
 # match 8/6/27 — but "108"/"208" do NOT (that's the whole number, not a digit).
 # Override via EXCLUDE_SECTIONS (comma-separated numbers; empty = exclude none).
 EXCLUDE_SECTION_NUMS = {int(n) for n in re.findall(r"\d+", os.environ.get("EXCLUDE_SECTIONS", "3,4,5,6,7,8,27,28,29,30,31,32"))}
-# Section NAMES to NEVER alert on (GA floor / pit — standing-room, unpredictable
-# flip dynamics). Matched as whole words in the section string, so "Floor A",
-# "GA Pit", "The Pit" all drop, but "Capitol"/"hospitality" don't false-match.
+# Section NAMES to NEVER alert on: GA floor/pit (standing-room) + vip/suite
+# (premium hospitality). All flip unpredictably. Matched as whole words in the
+# section string, so "Floor A", "GA Pit", "VIP Row", "Luxury Suite/Suites" all
+# drop, but "Capitol"/"hospitality" don't false-match.
 # Override via EXCLUDE_SECTION_NAMES (comma-separated; empty = exclude none).
-EXCLUDE_SECTION_NAMES = [s.strip().lower() for s in os.environ.get("EXCLUDE_SECTION_NAMES", "floor,pit").split(",") if s.strip()]
+EXCLUDE_SECTION_NAMES = [s.strip().lower() for s in os.environ.get("EXCLUDE_SECTION_NAMES", "floor,pit,vip,suite,suites").split(",") if s.strip()]
 _EXCLUDE_NAME_RE = re.compile(r"\b(" + "|".join(re.escape(n) for n in EXCLUDE_SECTION_NAMES) + r")\b", re.I) if EXCLUDE_SECTION_NAMES else None
 # Only scrape during active hours (Central time) — no point burning credits at 3am.
 ACTIVE_TZ = ZoneInfo("America/Chicago")
