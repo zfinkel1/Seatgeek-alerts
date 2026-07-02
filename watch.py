@@ -88,6 +88,11 @@ FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "5"))
 # ones (thin premium sections) has no such cluster -> not a deal, skip it.
 FLIP_DEPTH = int(os.environ.get("FLIP_DEPTH", "3"))
 FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
+# Sanity ceiling: a real flip's resale is never a huge multiple of the buy. When
+# the "going rate" comes back many times the buy price it's a junk/placeholder
+# listing polluting the comps (sellers park tickets at $50,111 etc so they show
+# but never sell), NOT a deal. Reject any flip whose resale exceeds buy x this.
+MAX_RESALE_MULT = float(os.environ.get("MAX_RESALE_MULT", "6"))
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Lowered 100 -> 75 (2026-06-30 test, more
 # volume) now that the going-rate comps are accurate; revert to 100 if singles get noisy.
@@ -380,7 +385,7 @@ def evaluate(row, listings, mirror_listings=None):
                     return []   # no clustered floor -> thin/spread section, not a deal
             hits = []
             for L in s:
-                if L["price"] <= _buyline(L, R) and _scarce_enough(L):
+                if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT:
                     h = dict(L)
                     h["resale"] = R
                     h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
@@ -413,7 +418,7 @@ def evaluate(row, listings, mirror_listings=None):
                         return []          # no real cluster -> not a deal
                 hits = []
                 for L in own:
-                    if L["price"] <= _buyline(L, R) and _scarce_enough(L):
+                    if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT:
                         h = dict(L)
                         h["resale"] = R
                         h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
