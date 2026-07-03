@@ -498,7 +498,15 @@ def deal_sig(eid, L):
     return f"{eid}|{sec}|{rw}|{price}"
 
 
+# Global kill-switch. True = the worker idles (no scraping, no Scrapfly credits,
+# no alerts). Flip to False (or set env SEATGEEK_PAUSED=0) to resume.
+PAUSED = os.environ.get("SEATGEEK_PAUSED", "1") == "1"
+
+
 def main():
+    if PAUSED:
+        print("[watch] PAUSED — not scraping (flip PAUSED / SEATGEEK_PAUSED=0 to resume)")
+        return
     # Read 'Mute this section' taps every loop (even off-hours) so mutes register
     # promptly; then bail if we're outside active hours.
     state = load_state()
