@@ -260,7 +260,7 @@ def effective_interval(row):
     down because distant prices barely move. Any other 'every' value is a fixed
     interval."""
     ev = (row.get("every") or "").strip().lower()
-    if ev != "auto":
+    if ev not in ("auto", "auto+"):
         return parse_interval(ev)
     d = _event_date(row.get("url", ""))
     if d is None:
@@ -268,6 +268,13 @@ def effective_interval(row):
     days = (d - date.today()).days
     if days < -1:
         return 30 * 86400   # event passed -> effectively off
+    if ev == "auto+":
+        # Priority tier (founder: Cubs) — same ramp, ~2x hotter at every distance.
+        if days <= 7:
+            return 300      # game week -> 5min
+        if days <= 30:
+            return 3600     # 8-30 days -> hourly
+        return 3 * 3600     # 31+ days -> every 3h
     if days <= 7:
         return 600          # game day + week of -> 10min
     if days <= 30:
