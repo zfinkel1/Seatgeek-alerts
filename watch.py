@@ -94,9 +94,13 @@ FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # but never sell), NOT a deal. Reject any flip whose resale exceeds buy x this.
 MAX_RESALE_MULT = float(os.environ.get("MAX_RESALE_MULT", "6"))
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
-# than the row's normal threshold (pairs). Lowered 100 -> 75 (2026-06-30 test, more
-# volume) now that the going-rate comps are accurate; revert to 100 if singles get noisy.
-FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "75"))
+# than the row's normal threshold (pairs). Back to 100 (2026-07-06: founder wants
+# only BETTER flips — the 75 volume test is over).
+FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "100"))
+# Minimum NET profit (after the resale fee) for a flip to alert. Percentage alone
+# lets $15-profit flips on cheap tickets through; a real flip must also be worth
+# the effort in dollars. Set 0 to disable.
+FLIP_MIN_NET = float(os.environ.get("FLIP_MIN_NET", "50"))
 # NFL stadiums are huge (60k+) with dozens of thinly-listed sections, so the tight-
 # venue defaults above fired off fake floors built from a handful of asks. NFL needs
 # MORE comparables, drawn from TRULY adjacent seats, before any deal qualifies:
@@ -385,7 +389,7 @@ def evaluate(row, listings, mirror_listings=None):
                     return []   # no clustered floor -> thin/spread section, not a deal
             hits = []
             for L in s:
-                if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT:
+                if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT and (R * (1 - fee) - L["price"]) >= FLIP_MIN_NET:
                     h = dict(L)
                     h["resale"] = R
                     h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
@@ -418,7 +422,7 @@ def evaluate(row, listings, mirror_listings=None):
                         return []          # no real cluster -> not a deal
                 hits = []
                 for L in own:
-                    if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT:
+                    if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT and (R * (1 - fee) - L["price"]) >= FLIP_MIN_NET:
                         h = dict(L)
                         h["resale"] = R
                         h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
@@ -499,8 +503,8 @@ def deal_sig(eid, L):
 
 
 # Global kill-switch. True = the worker idles (no scraping, no Scrapfly credits,
-# no alerts). Flip to False (or set env SEATGEEK_PAUSED=0) to resume.
-PAUSED = os.environ.get("SEATGEEK_PAUSED", "1") == "1"
+# no alerts). Flip via env SEATGEEK_PAUSED=1 to pause again.
+PAUSED = os.environ.get("SEATGEEK_PAUSED", "0") == "1"
 
 
 def main():
