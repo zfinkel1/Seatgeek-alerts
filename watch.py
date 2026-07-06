@@ -82,7 +82,7 @@ FLIP_MIN_LISTINGS = int(os.environ.get("FLIP_MIN_LISTINGS", "5"))
 # Compare a listing against its section NEIGHBORHOOD (this many sections on each
 # side, by section number) — adjacent sections are comparable seats and give a
 # real market, so a couple overpriced section-mates can't fake a deal.
-FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "5"))
+FLIP_ADJ_SECTIONS = int(os.environ.get("FLIP_ADJ_SECTIONS", "3"))  # +-3 (was 5): five sections crossed real price tiers around arena corners — muddy comps
 # A real "going rate" needs DEPTH: at least FLIP_DEPTH listings clustered within
 # FLIP_BAND of a price. A lone cheap ask sitting under a sparse ladder of pricey
 # ones (thin premium sections) has no such cluster -> not a deal, skip it.
@@ -93,14 +93,20 @@ FLIP_BAND = float(os.environ.get("FLIP_BAND", "15")) / 100.0
 # listing polluting the comps (sellers park tickets at $50,111 etc so they show
 # but never sell), NOT a deal. Reject any flip whose resale exceeds buy x this.
 MAX_RESALE_MULT = float(os.environ.get("MAX_RESALE_MULT", "6"))
+# SeatGeek's own per-listing "value" estimate (dq.ev, already scraped) is a FREE
+# second opinion on our going rate. If OUR computed resale R wildly exceeds what
+# SeatGeek itself thinks the seat is worth, the comp pool is skewed (sparse or
+# premium-polluted) — that's a comp error, not a deal. R must stay within
+# value * this multiple whenever the listing carries a value estimate.
+RESALE_VS_VALUE_MULT = float(os.environ.get("RESALE_VS_VALUE_MULT", "1.5"))
 # Single tickets (qty 1) are harder to resell, so require a bigger margin on them
 # than the row's normal threshold (pairs). Back to 100 (2026-07-06: founder wants
 # only BETTER flips — the 75 volume test is over).
-FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "100"))
+FLIP_SINGLE_MARGIN = float(os.environ.get("FLIP_SINGLE_MARGIN", "75"))
 # Minimum NET profit (after the resale fee) for a flip to alert. Percentage alone
 # lets $15-profit flips on cheap tickets through; a real flip must also be worth
 # the effort in dollars. Set 0 to disable.
-FLIP_MIN_NET = float(os.environ.get("FLIP_MIN_NET", "50"))
+FLIP_MIN_NET = float(os.environ.get("FLIP_MIN_NET", "0"))  # off — founder wants volume; comps quality is the focus
 # NFL stadiums are huge (60k+) with dozens of thinly-listed sections, so the tight-
 # venue defaults above fired off fake floors built from a handful of asks. NFL needs
 # MORE comparables, drawn from TRULY adjacent seats, before any deal qualifies:
@@ -364,6 +370,14 @@ def evaluate(row, listings, mirror_listings=None):
             at_or_below = sum(1 for p in tier_prices.get(tier, ()) if p <= ceiling)
             return at_or_below <= depth   # itself + up to (depth-1) others; more = not scarce
 
+        def _value_ok(L, R):
+            # Cross-check our going rate against SeatGeek's own value estimate
+            # for the listing — no estimate means no check.
+            v = L.get("value")
+            if not v or v <= 0:
+                return True
+            return R <= v * RESALE_VS_VALUE_MULT
+
         def _buyline(L, R):
             # singles (qty 1) are harder to resell -> demand a bigger margin -> a lower
             # buy price to qualify. Everything else uses the row's normal margin.
@@ -389,7 +403,7 @@ def evaluate(row, listings, mirror_listings=None):
                     return []   # no clustered floor -> thin/spread section, not a deal
             hits = []
             for L in s:
-                if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT and (R * (1 - fee) - L["price"]) >= FLIP_MIN_NET:
+                if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT and (R * (1 - fee) - L["price"]) >= FLIP_MIN_NET and _value_ok(L, R):
                     h = dict(L)
                     h["resale"] = R
                     h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
@@ -422,7 +436,7 @@ def evaluate(row, listings, mirror_listings=None):
                         return []          # no real cluster -> not a deal
                 hits = []
                 for L in own:
-                    if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT and (R * (1 - fee) - L["price"]) >= FLIP_MIN_NET:
+                    if L["price"] <= _buyline(L, R) and _scarce_enough(L) and R <= L["price"] * MAX_RESALE_MULT and (R * (1 - fee) - L["price"]) >= FLIP_MIN_NET and _value_ok(L, R):
                         h = dict(L)
                         h["resale"] = R
                         h["flip_pct"] = (R * (1 - fee) - L["price"]) / L["price"] * 100
