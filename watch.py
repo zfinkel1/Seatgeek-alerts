@@ -133,6 +133,17 @@ EXCLUDE_SECTION_NUMS = {int(n) for n in re.findall(r"\d+", os.environ.get("EXCLU
 # Override via EXCLUDE_SECTION_NAMES (comma-separated; empty = exclude none).
 EXCLUDE_SECTION_NAMES = [s.strip().lower() for s in os.environ.get("EXCLUDE_SECTION_NAMES", "floor,pit,sro,vip,suite,suites,club,lounge,hospitality").split(",") if s.strip()]
 _EXCLUDE_NAME_RE = re.compile(r"\b(" + "|".join(re.escape(n) for n in EXCLUDE_SECTION_NAMES) + r")\b", re.I) if EXCLUDE_SECTION_NAMES else None
+# Bad-view seats: side/rear/behind stage, obstructed, limited/partial view.
+# They're cheap for a reason and resell badly — never alert on them. Matched
+# against BOTH the listing's disclosure flags (SeatGeek sends codes like
+# "side_stage"/"obstructed_view" — captured as `flags` by scrape.py) and the
+# section name (StubHub has no per-listing flags, but its side-stage sections
+# are usually just NAMED that). Override via EXCLUDE_VIEW_RE; empty disables.
+_view_pat = os.environ.get(
+    "EXCLUDE_VIEW_RE",
+    r"side.{0,3}stage|rear.{0,3}stage|behind.{0,3}stage|back.{0,3}of.{0,3}stage|obstruct|limited.{0,3}view|partial.{0,3}view",
+)
+_EXCLUDE_VIEW_RE = re.compile(_view_pat, re.I) if _view_pat else None
 # Only scrape during active hours (Central time) — no point burning credits at 3am.
 ACTIVE_TZ = ZoneInfo("America/Chicago")
 ACTIVE_HOUR_START = int(os.environ.get("ACTIVE_HOUR_START", "9"))   # 9am CT
@@ -341,6 +352,12 @@ def evaluate(row, listings, mirror_listings=None):
         candidates = [L for L in candidates if _section_key(L["section"])[1] not in EXCLUDE_SECTION_NUMS]
     if _EXCLUDE_NAME_RE:
         candidates = [L for L in candidates if not _EXCLUDE_NAME_RE.search(L.get("section") or "")]
+    # Bad-view seats never alert (they DO stay in the comps pool — a cheap
+    # side-stage ask can only pull a section's going rate DOWN, which is the
+    # conservative direction for a buy decision).
+    if _EXCLUDE_VIEW_RE:
+        candidates = [L for L in candidates
+                      if not _EXCLUDE_VIEW_RE.search(f"{L.get('section') or ''} {L.get('flags') or ''}")]
     if not candidates:
         return [], None, []
     thr = float(row["threshold"])

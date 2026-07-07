@@ -104,6 +104,14 @@ def get_listings(event_url, retries=3):
                 score = int(float(score)) if score is not None else None
             except (TypeError, ValueError):
                 score = None
+            # Disclosure flags (side_stage / obstructed_view / limited_view…).
+            # SeatGeek's key for these has varied, so read every plausible one
+            # and flatten to a lowercase string the flip engine can regex.
+            disc = (L.get("d") or L.get("dis") or L.get("disclosures")
+                    or L.get("f") or L.get("flags") or [])
+            if not isinstance(disc, (list, tuple)):
+                disc = [disc]
+            flags = " ".join(str(x) for x in disc if x).lower()
             out.append({
                 "section": str(L.get("s") or "").strip(),
                 "price": float(price),
@@ -112,7 +120,13 @@ def get_listings(event_url, retries=3):
                 "id": str(L.get("id") or f"{L.get('s')}-{price}"),
                 "value": float(dq["ev"]) if dq.get("ev") else None,
                 "score": score,
+                "flags": flags,
             })
+        if out:
+            flagged = sum(1 for x in out if x["flags"])
+            if flagged:
+                print(f"  [scrape] {flagged}/{len(out)} listings carry view flags "
+                      f"(e.g. {next(x['flags'] for x in out if x['flags'])!r})")
         return out or None
 
     last_err = None
