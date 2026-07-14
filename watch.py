@@ -56,6 +56,10 @@ SHEET_CSV_URL = os.environ.get("SHEET_CSV_URL")   # published Google Sheet CSV u
 LOCAL_WATCHLIST = "watchlist.csv"
 
 _INTERVALS = {
+    # Sub-5min tiers are EXPENSIVE (each check = a Scrapfly render, ~25 credits).
+    # Reserve them for a hot event you're actively hunting — at 3min an event
+    # burns ~20x what a 1h row does. Unknown values fall back to DEFAULT_INTERVAL.
+    "1min": 60, "2min": 120, "3min": 180,
     "5min": 300, "10min": 600, "15min": 900, "30min": 1800,
     "1h": 3600, "2h": 7200, "3h": 10800, "6h": 21600, "12h": 43200,
     "daily": 86400, "24h": 86400,
