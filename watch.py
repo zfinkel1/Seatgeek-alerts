@@ -349,7 +349,14 @@ def evaluate(row, listings, mirror_listings=None):
     # section cell can list several sections separated by comma or pipe:
     #   "pit, floor a, floor b"  -> watch any of them in one row
     secs = [s.strip() for s in re.split(r"[,|]", sec) if s.strip()]
-    candidates = [L for L in listings if any(s in L["section"].lower() for s in secs)] if secs else listings
+    # A section spec ending in "*" is a PREFIX match ("a*" = any section whose
+    # name starts with "a", e.g. the 1914 Club's A1/A5/A14 sections). Otherwise
+    # it's the usual substring match. Lets us target a whole named tier without
+    # listing every section number.
+    def _sec_hit(sect):
+        low = sect.lower().strip()
+        return any(low.startswith(s[:-1].strip()) if s.endswith("*") else (s in low) for s in secs)
+    candidates = [L for L in listings if _sec_hit(L["section"])] if secs else listings
     # Drop excluded sections entirely — they never alert AND never count toward a
     # neighbor's going rate, so a bad premium box can't skew nearby sections either.
     if EXCLUDE_SECTION_NUMS:
