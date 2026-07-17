@@ -17,6 +17,7 @@ import re
 import json
 import urllib.parse
 import urllib.request
+import urllib.error
 
 SEATGEEK_CLIENT_ID = os.environ.get("SEATGEEK_CLIENT_ID", "MTY2MnwxMzgzMzIwMTU4")
 SCRAPFLY = "https://api.scrapfly.io/scrape"
@@ -35,15 +36,31 @@ def _scrapfly_url(key, target, session, render_js=False):
         "country": "us",
         "session": session,
         "session_sticky_proxy": "true",
+        # SeatGeek hardened PerimeterX ~2026-07-11; datacenter proxies started
+        # getting blocked (422 ASP shield failures). Residential IPs are far
+        # harder for PerimeterX to flag. Overridable in case the pool name/plan
+        # changes: SCRAPFLY_PROXY_POOL (set empty to drop the param entirely).
+        "proxy_pool": os.environ.get("SCRAPFLY_PROXY_POOL", "public_residential_pool"),
     }
+    if not params["proxy_pool"]:
+        del params["proxy_pool"]
     if render_js:
         params["render_js"] = "true"
     return SCRAPFLY + "?" + urllib.parse.urlencode(params)
 
 
 def _call(url, timeout=150):
-    with urllib.request.urlopen(url, timeout=timeout) as resp:
-        return json.loads(resp.read().decode("utf-8", "replace"))
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            return json.loads(resp.read().decode("utf-8", "replace"))
+    except urllib.error.HTTPError as e:
+        # Scrapfly puts the real reason (e.g. plan feature not enabled, bad param)
+        # in the response BODY — surface it instead of the bare status line.
+        try:
+            body = e.read().decode("utf-8", "replace")
+        except Exception:
+            body = ""
+        raise RuntimeError(f"HTTP {e.code}: {body[:600]}") from None
 
 
 def _find_listings(o):
