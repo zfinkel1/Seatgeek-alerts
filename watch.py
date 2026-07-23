@@ -38,15 +38,22 @@ except Exception:
 
 from scrape import get_listings as _seatgeek_listings
 from stubhub import get_listings as _stubhub_listings
+from gametime import get_listings as _gametime_listings
+from vividseats import get_listings as _vivid_listings
 from alerts import send_alert, poll_ignores, mute_key, event_id_from_url
 
 
 def get_listings(url):
-    """Route to the right scraper by the event URL's site. Both return the same
-    normalized shape {section, price, qty, row, id, value, score}, so the flip
-    engine and everything downstream are source-agnostic."""
-    if "stubhub.com" in (url or "").lower():
+    """Route to the right scraper by the event URL's site. Every scraper returns
+    the same normalized shape {section, price, qty, row, id, value, score}, so the
+    flip engine and everything downstream are source-agnostic."""
+    u = (url or "").lower()
+    if "stubhub.com" in u:
         return _stubhub_listings(url)
+    if "gametime.co" in u:
+        return _gametime_listings(url)
+    if "vividseats.com" in u:
+        return _vivid_listings(url)
     return _seatgeek_listings(url)
 
 # Persist state (per-event throttle + already-alerted ids) on a Railway VOLUME if
