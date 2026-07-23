@@ -40,6 +40,7 @@ from scrape import get_listings as _seatgeek_listings
 from stubhub import get_listings as _stubhub_listings
 from gametime import get_listings as _gametime_listings
 from vividseats import get_listings as _vivid_listings
+from ticketexchange import get_listings as _ticketexchange_listings
 from alerts import send_alert, poll_ignores, mute_key, event_id_from_url
 
 
@@ -54,6 +55,8 @@ def get_listings(url):
         return _gametime_listings(url)
     if "vividseats.com" in u:
         return _vivid_listings(url)
+    if "ticketexchangebyticketmaster.com" in u:
+        return _ticketexchange_listings(url)
     return _seatgeek_listings(url)
 
 # Persist state (per-event throttle + already-alerted ids) on a Railway VOLUME if
