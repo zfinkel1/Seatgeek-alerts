@@ -70,6 +70,10 @@ DEFAULT_INTERVAL = 1800  # 30 min if "every" is blank/unrecognized
 # Prevents a flood when many listings sit under the threshold — you only care
 # about the best deals, not every seat. Override via env if you ever want more.
 MAX_ALERTS = int(os.environ.get("MAX_ALERTS_PER_CHECK", "3"))
+# Buy watches (a "$" row that names sections) want to see EVERY qualifying seat in
+# those sections, not just the cheapest few — so they get a much higher per-check
+# cap. Still bounded so a section that dumps a huge block can't flood the inbox.
+BUY_MAX_ALERTS = int(os.environ.get("BUY_MAX_ALERTS", "25"))
 # Don't re-alert the SAME deal (event+section+row+price) within this many hours,
 # even if it flickers out of the scrape and back. StubHub re-keys its listing id
 # as the cheapest offering in a section rotates, which spammed 4 emails for one
@@ -357,16 +361,23 @@ def evaluate(row, listings, mirror_listings=None):
         low = sect.lower().strip()
         return any(low.startswith(s[:-1].strip()) if s.endswith("*") else (s in low) for s in secs)
     candidates = [L for L in listings if _sec_hit(L["section"])] if secs else listings
+    # When a row NAMES exact sections and isn't a flip row, it's a personal BUY
+    # watch — the user picked those sections on purpose, so honor them verbatim and
+    # skip the flip-engine exclusions below (which exist to keep the whole-event
+    # flip scan out of premium/club/bad-view seats). Without this, a wanted "United
+    # Club" or side section would be silently dropped and never alert.
+    _typ_raw = row.get("type", "$").strip().lower()
+    explicit_pick = bool(secs) and not _typ_raw.startswith("flip")
     # Drop excluded sections entirely — they never alert AND never count toward a
     # neighbor's going rate, so a bad premium box can't skew nearby sections either.
-    if EXCLUDE_SECTION_NUMS:
+    if EXCLUDE_SECTION_NUMS and not explicit_pick:
         candidates = [L for L in candidates if _section_key(L["section"])[1] not in EXCLUDE_SECTION_NUMS]
-    if _EXCLUDE_NAME_RE:
+    if _EXCLUDE_NAME_RE and not explicit_pick:
         candidates = [L for L in candidates if not _EXCLUDE_NAME_RE.search(L.get("section") or "")]
     # Bad-view seats never alert (they DO stay in the comps pool — a cheap
     # side-stage ask can only pull a section's going rate DOWN, which is the
     # conservative direction for a buy decision).
-    if _EXCLUDE_VIEW_RE:
+    if _EXCLUDE_VIEW_RE and not explicit_pick:
         candidates = [L for L in candidates
                       if not _EXCLUDE_VIEW_RE.search(f"{L.get('section') or ''} {L.get('flags') or ''}")]
     if not candidates:
