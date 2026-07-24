@@ -1,4 +1,4 @@
-url,section,threshold,type,every,label,active
+url,section,threshold,type,every,label,active,minqty
 https://seatgeek.com/chicago-cubs-tickets/6-30-2026-chicago-illinois-wrigley-field/mlb/17695220,,30,flip,auto+,Cubs 6/30,yes
 https://seatgeek.com/chicago-cubs-tickets/7-1-2026-chicago-illinois-wrigley-field/mlb/17695222,,30,flip,auto+,Cubs 7/1,yes
 https://seatgeek.com/chicago-cubs-tickets/7-3-2026-chicago-illinois-wrigley-field/mlb/17695225,,30,flip,auto+,Cubs 7/3,yes
@@ -196,18 +196,18 @@ https://seatgeek.com/lollapalooza-tickets/chicago-illinois-grant-park-1-2026-07-
 https://seatgeek.com/lollapalooza-tickets/chicago-illinois-grant-park-1-2026-07-31-12-pm/music-festival/18106140,vip,700,$,auto+,Lolla Fri 7/31 SG - VIP under $700,yes
 https://seatgeek.com/lollapalooza-tickets/chicago-illinois-grant-park-1-2026-08-01-12-pm/music-festival/18106145,ga,200,$,auto+,Lolla Sat 8/1 SG - GA under $200,yes
 https://seatgeek.com/lollapalooza-tickets/chicago-illinois-grant-park-1-2026-08-01-12-pm/music-festival/18106145,vip,750,$,auto+,Lolla Sat 8/1 SG - VIP under $750,yes
-https://seatgeek.com/chicago-bears-tickets/10-4-2026-chicago-illinois-soldier-field/nfl/18016528,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 - upper corners/ends under $250,yes
-https://seatgeek.com/chicago-bears-tickets/10-4-2026-chicago-illinois-soldier-field/nfl/18016528,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 - 200 level under $340,yes
-https://seatgeek.com/chicago-bears-tickets/10-4-2026-chicago-illinois-soldier-field/nfl/18016528,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 - lower level under $400,yes
-https://gametime.co/nfl-football/jets-at-bears-tickets/10-4-2026-chicago-il-soldier-field/events/695c58588ac525266dacf81e,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 GT - upper corners/ends under $250,yes
-https://gametime.co/nfl-football/jets-at-bears-tickets/10-4-2026-chicago-il-soldier-field/events/695c58588ac525266dacf81e,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 GT - 200 level under $340,yes
-https://gametime.co/nfl-football/jets-at-bears-tickets/10-4-2026-chicago-il-soldier-field/events/695c58588ac525266dacf81e,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 GT - lower level under $400,yes
-https://www.vividseats.com/new-york-jets-at-chicago-bears-tickets-soldier-field-10-4-2026/production/6488798,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 VS - upper corners/ends under $250,yes
-https://www.vividseats.com/new-york-jets-at-chicago-bears-tickets-soldier-field-10-4-2026/production/6488798,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 VS - 200 level under $340,yes
-https://www.vividseats.com/new-york-jets-at-chicago-bears-tickets-soldier-field-10-4-2026/production/6488798,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 VS - lower level under $400,yes
-https://www.stubhub.com/chicago-bears-chicago-tickets-10-4-2026/event/160434798,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 SH - upper corners/ends under $250,yes
-https://www.stubhub.com/chicago-bears-chicago-tickets-10-4-2026/event/160434798,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 SH - 200 level under $340,yes
-https://www.stubhub.com/chicago-bears-chicago-tickets-10-4-2026/event/160434798,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 SH - lower level under $400,yes
+https://seatgeek.com/chicago-bears-tickets/10-4-2026-chicago-illinois-soldier-field/nfl/18016528,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 - upper corners/ends under $250,yes,2
+https://seatgeek.com/chicago-bears-tickets/10-4-2026-chicago-illinois-soldier-field/nfl/18016528,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 - 200 level under $340,yes,2
+https://seatgeek.com/chicago-bears-tickets/10-4-2026-chicago-illinois-soldier-field/nfl/18016528,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 - lower level under $400,yes,2
+https://gametime.co/nfl-football/jets-at-bears-tickets/10-4-2026-chicago-il-soldier-field/events/695c58588ac525266dacf81e,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 GT - upper corners/ends under $250,yes,2
+https://gametime.co/nfl-football/jets-at-bears-tickets/10-4-2026-chicago-il-soldier-field/events/695c58588ac525266dacf81e,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 GT - 200 level under $340,yes,2
+https://gametime.co/nfl-football/jets-at-bears-tickets/10-4-2026-chicago-il-soldier-field/events/695c58588ac525266dacf81e,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 GT - lower level under $400,yes,2
+https://www.vividseats.com/new-york-jets-at-chicago-bears-tickets-soldier-field-10-4-2026/production/6488798,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 VS - upper corners/ends under $250,yes,2
+https://www.vividseats.com/new-york-jets-at-chicago-bears-tickets-soldier-field-10-4-2026/production/6488798,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 VS - 200 level under $340,yes,2
+https://www.vividseats.com/new-york-jets-at-chicago-bears-tickets-soldier-field-10-4-2026/production/6488798,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 VS - lower level under $400,yes,2
+https://www.stubhub.com/chicago-bears-chicago-tickets-10-4-2026/event/160434798,349|350|351|352|353|354|355|356|318|319|320|321|322|323|324|325|326,250,$,auto,Bears Jets 10/4 SH - upper corners/ends under $250,yes,2
+https://www.stubhub.com/chicago-bears-chicago-tickets-10-4-2026/event/160434798,248|249|250|251|252|253|254|255|256|218|219|220|221|222|223|224|225|226,340,$,auto,Bears Jets 10/4 SH - 200 level under $340,yes,2
+https://www.stubhub.com/chicago-bears-chicago-tickets-10-4-2026/event/160434798,148|149|150|151|152|153|154|155|119|120|121|122|123|124|125|126,400,$,auto,Bears Jets 10/4 SH - lower level under $400,yes,2
 https://www.ticketexchangebyticketmaster.com/grant-park-chicago/lollapalooza-tickets-chicago-il-7-30-2026/tickets/4869985,thursday,200,$,auto,Lolla Thu 7/30 TE - GA under $200,yes
 https://www.ticketexchangebyticketmaster.com/grant-park-chicago/lollapalooza-tickets-chicago-il-7-30-2026/tickets/4869985,vip,750,$,auto,Lolla Thu 7/30 TE - VIP under $750,yes
 https://www.ticketexchangebyticketmaster.com/grant-park-chicago/lollapalooza-tickets-chicago-il-7-31-2026/tickets/4869986,friday,200,$,auto,Lolla Fri 7/31 TE - GA under $200,yes

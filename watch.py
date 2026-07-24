@@ -390,6 +390,23 @@ def evaluate(row, listings, mirror_listings=None):
     if _EXCLUDE_VIEW_RE and not explicit_pick:
         candidates = [L for L in candidates
                       if not _EXCLUDE_VIEW_RE.search(f"{L.get('section') or ''} {L.get('flags') or ''}")]
+    # Minimum seats-together per listing (minqty column). minqty=2 = only pairs or
+    # more sold together, NO singles. A listing whose qty we couldn't read stays in
+    # (permissive) so a parse gap doesn't silently drop everything.
+    try:
+        minqty = int(float(row.get("minqty") or 1))
+    except (TypeError, ValueError):
+        minqty = 1
+    if minqty > 1:
+        def _qty_ok(L):
+            q = L.get("qty")
+            if q is None:
+                return True
+            try:
+                return int(q) >= minqty
+            except (TypeError, ValueError):
+                return True
+        candidates = [L for L in candidates if _qty_ok(L)]
     if not candidates:
         return [], None, []
     thr = float(row["threshold"])

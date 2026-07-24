@@ -54,7 +54,9 @@ def get_listings(event_url, retries=3):
                 if price is None:
                     continue
                 lots = L.get("lots") or []
-                qty = lots[0] if lots else None
+                # Largest buyable group size, so a min-seats-together filter passes
+                # when 2+ can be bought as a block (even if 1 is also an option).
+                qty = max(lots) if lots else None
                 out.append({
                     "section": str(L.get("section") or "").strip(),
                     "price": float(price) / 100.0,   # cents -> dollars
