@@ -1,3 +1,6 @@
 __pycache__/
 *.pyc
 .env
+# Captured price history — grows a few MB/day and is data, not source. Lives on
+# the Railway volume in production; keep it out of git so the repo stays small.
+history/

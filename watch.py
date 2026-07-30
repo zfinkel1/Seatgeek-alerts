@@ -42,22 +42,30 @@ from gametime import get_listings as _gametime_listings
 from vividseats import get_listings as _vivid_listings
 from ticketexchange import get_listings as _ticketexchange_listings
 from alerts import send_alert, poll_ignores, mute_key, event_id_from_url
+import history
 
 
 def get_listings(url):
     """Route to the right scraper by the event URL's site. Every scraper returns
     the same normalized shape {section, price, qty, row, id, value, score}, so the
-    flip engine and everything downstream are source-agnostic."""
+    flip engine and everything downstream are source-agnostic.
+
+    Every pull is also appended to the history log on the way past. This is the
+    single choke point all five scrapers pass through, so recording here captures
+    mirror scrapes too, and costs nothing — the listings are already in memory."""
     u = (url or "").lower()
     if "stubhub.com" in u:
-        return _stubhub_listings(url)
-    if "gametime.co" in u:
-        return _gametime_listings(url)
-    if "vividseats.com" in u:
-        return _vivid_listings(url)
-    if "ticketexchangebyticketmaster.com" in u:
-        return _ticketexchange_listings(url)
-    return _seatgeek_listings(url)
+        listings = _stubhub_listings(url)
+    elif "gametime.co" in u:
+        listings = _gametime_listings(url)
+    elif "vividseats.com" in u:
+        listings = _vivid_listings(url)
+    elif "ticketexchangebyticketmaster.com" in u:
+        listings = _ticketexchange_listings(url)
+    else:
+        listings = _seatgeek_listings(url)
+    history.record(url, listings)
+    return listings
 
 # Persist state (per-event throttle + already-alerted ids) on a Railway VOLUME if
 # one is attached, so a redeploy doesn't wipe the dedup memory and re-fire alerts.
