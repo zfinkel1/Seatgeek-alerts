@@ -89,10 +89,48 @@ A lookup, not a forecast: what does this performer's inventory actually go for.
 
 ---
 
-# PART 2 — Secondary directional
+# PART 2 — Secondary: buy listings that will go UP
 
-Buy listings that will appreciate. Needs prediction, history, and a data vendor.
-Competes against Automatiq-armed brokers on events everyone can see.
+Completely different trade from Part 1. Here you buy a ticket **already listed on
+SeatGeek**, at whatever the market is asking, because you expect it to be worth
+more later. Then you sell it higher.
+
+```
+BUY — Blackhawks vs Wild, Jan 12
+  Section 318, Row 12, 2 tickets
+  SeatGeek: $85 ea   →   worth ~$140 in two weeks
+  → link
+```
+
+- **Part 1's margin exists the moment you buy** — face is below market, and you
+  can see it. No forecasting.
+- **Part 2's margin does not exist yet.** You're buying at fair market price and
+  betting the price rises. The edge is entirely a forecast.
+
+That makes this the harder business, and the one that genuinely needs a model.
+It also competes against Automatiq-armed brokers on events everyone can see.
+
+### What it needs
+
+| piece | status |
+|---|---|
+| Price history per event/section | **blocked** — needs DataIQ or equivalent |
+| A model that says "this will rise" | `rules.py` — 8 candidates, **none validated** |
+| Proof the model works before real money | `backtest.py` — **built, never run on real data** |
+| Comparable seats (which sections are equivalent) | `zones.py` — **built** |
+| Which signals to feed it | `signals.py` — **built** |
+
+### The signals that predict a rise
+
+- **Supply draining faster than time to event** — inventory runs out, price rises
+- **Primary selling out** (`depletion.py`) — while the box office has face-value
+  seats, resale can't run. Primary exhausting removes that ceiling. This is a
+  *Part 2 input*, not a separate project.
+- **Real sell-through vs sellers walking away** — a shrinking book means opposite
+  things depending on which
+- **Sellers repricing upward** — they're volunteering that demand is building
+- **Mirror listings** (`pairing.py`) — brokers listing tickets they don't own.
+  Not demand, and they poison any model built on asks.
 
 Built and unit-tested, waiting on sold data:
 
@@ -103,17 +141,8 @@ Built and unit-tested, waiting on sold data:
 - `zones.py` — contiguous price-coherent zones (centre-ice vs corner)
 - `ticketgenie.py` / `tg_pull.py` / `tg_probe.py` — client, corpus puller, probe
 
-**Nothing here is validated.** It is a scoreboard with nothing on it.
-
-### Supporting pieces
-
-- **Mirror detection** (`pairing.py`, crude) — brokers list tickets they don't own
-  and buy only if they sell. Those listings are not demand, and they poison any
-  valuation built on asks. Real version needs listing-level secondary data.
-- **Primary depletion** (`depletion.py`) — watches seats.io inventory drain and
-  flags events on pace to sell out. The cleanest signal available: a seat leaving
-  the primary chart is *sold*, with none of secondary's ambiguity. Needs a second
-  snapshot to verify its own premise.
+**Nothing here is validated.** It is a scoreboard with nothing on it — the model
+has never been tested against a single real outcome.
 
 ---
 
