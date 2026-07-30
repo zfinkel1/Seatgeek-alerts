@@ -51,20 +51,72 @@ def _get(url, timeout=45):
 
 # ------------------------------------------------------------------ notability
 
-def resolve_title(name):
-    """Ask Wikipedia for the real article title.
+# A resolved article only counts if it's about someone who performs. Wikipedia's
+# search will happily return the Prime Minister of India for the comedian "Modi",
+# or the sitcom "It's Always Sunny" for a show called "It's Always Punny" -- both
+# real false positives from the first run, both scoring higher than Andy Cohen.
+PERFORMER_RE = re.compile(
+    r"\b(comedian|comic|stand-?up|actor|actress|musician|singer|rapper|"
+    r"songwriter|dj|disc jockey|host|presenter|broadcaster|writer|author|"
+    r"podcaster|entertainer|performer|television personality|drag queen|"
+    r"magician|band|duo|producer|filmmaker|screenwriter)\b", re.I)
 
-    Naive capitalisation silently loses people: title-casing a slug turns
-    'mckinnon' into 'Mckinnon', and Wikipedia's article is 'Kate McKinnon', so
-    the lookup 404s and a genuinely notable performer is dropped with no error.
-    Same for O'Brien, DeGeneres, van der Beek. Let Wikipedia do the matching."""
-    url = ("https://en.wikipedia.org/w/api.php?action=opensearch&limit=1"
+
+def _summary(title):
+    url = ("https://en.wikipedia.org/api/rest_v1/page/summary/"
+           + urllib.parse.quote(title.replace(" ", "_"), safe=""))
+    try:
+        return json.loads(_get(url, timeout=20))
+    except Exception:
+        return None
+
+
+def resolve_title(name):
+    """Wikipedia article for a performer, or None.
+
+    Two guards, both learned from bad matches on the first real run:
+
+    1. NAME MATCH. The resolved title must share the surname with the query.
+       Without it 'Modi' resolves to Narendra Modi (10,447 views/day) and
+       outranks every genuine act on the list.
+
+    2. OCCUPATION. The article must describe someone who performs. This kills
+       TV-show and place-name collisions that survive the name check.
+
+    Title-casing alone is also not enough to find people -- 'mckinnon' becomes
+    'Mckinnon' and 404s against 'Kate McKinnon' -- so search still does the
+    lookup; it just isn't trusted blindly any more.
+    """
+    url = ("https://en.wikipedia.org/w/api.php?action=opensearch&limit=3"
            "&namespace=0&format=json&search=" + urllib.parse.quote(name))
     try:
         d = json.loads(_get(url, timeout=20))
-        return d[1][0] if len(d) > 1 and d[1] else None
+        candidates = d[1] if len(d) > 1 else []
     except Exception:
         return None
+
+    q_tokens = [t for t in re.split(r"\W+", name.lower()) if len(t) > 2]
+    # A single usable token can't identify anyone. "Corey B" matched the voice
+    # actor Corey Burton, "Keysha E." matched something unrelated -- both are
+    # truncated stage names, and guessing at them is worse than skipping them.
+    if len(q_tokens) < 2:
+        return None
+    for title in candidates:
+        t_tokens = [t for t in re.split(r"\W+", title.lower()) if len(t) > 2]
+        # Every part of the queried name must appear, and the article can add at
+        # most one token (a middle or last name). Otherwise "Mark Paul" happily
+        # becomes "Mark-Paul Gosselaar".
+        if not all(t in t_tokens for t in q_tokens):
+            continue
+        if len(t_tokens) > len(q_tokens) + 1:
+            continue
+        s = _summary(title)
+        if not s or s.get("type") == "disambiguation":
+            continue
+        blurb = f"{s.get('description', '')} {s.get('extract', '')}"
+        if PERFORMER_RE.search(blurb):
+            return title
+    return None
 
 
 def pageviews(name, days=90):
@@ -108,7 +160,73 @@ def how_to_academy_us():
     return list(out.values())
 
 
-SOURCES = {"how_to_academy_us": how_to_academy_us}
+def the_wilbur():
+    """The Wilbur, Boston — comedy and music theatre, ~350 events listed.
+
+    Performer names live in the URL slug ('/event/kevin-nealon/'), which is
+    cleaner than the anchor text: the visible link is often an image or a bare
+    date."""
+    raw = _get("https://thewilbur.com/calendar/")
+    out = {}
+    for slug in set(re.findall(r'https?://thewilbur\.com/event/([^"/]+)/?"', raw)):
+        out[slug] = {
+            "id": f"wilbur:{slug}",
+            "source": "The Wilbur (Boston)",
+            "title": slug.replace("-", " ").title(),
+            "url": f"https://thewilbur.com/event/{slug}/",
+            "performer": performer_from(slug),
+        }
+    return list(out.values())
+
+
+# Helium is a chain, so one parser covers every city it operates in.
+HELIUM_CITIES = ["philadelphia", "portland", "indianapolis", "buffalo",
+                 "stlouis", "cleveland"]
+
+
+def helium(cities=None):
+    """Helium Comedy Clubs — national headliners in small rooms, sold direct.
+
+    Here the anchor TEXT carries the name ('Special Event: Colin Quinn') while
+    the URL is a numeric id, so this is the mirror image of The Wilbur."""
+    out = {}
+    for city in (cities or HELIUM_CITIES):
+        base = f"https://{city}.heliumcomedy.com"
+        try:
+            raw = _get(base + "/events")
+        except Exception as e:
+            print(f"    helium/{city}: {e}")
+            continue
+        for m in re.finditer(
+                r'<a[^>]+href="(?:https?://[^/]+)?/(?:events|shows)/(\d+)"[^>]*>'
+                r'(.*?)</a>', raw, re.S):
+            eid, inner = m.group(1), m.group(2)
+            text = H.unescape(re.sub(r"\s+", " ",
+                                     re.sub(r"<[^>]+>", " ", inner))).strip()
+            # Many anchors are just "Buy Tickets" — keep the one carrying a name.
+            if not text or re.fullmatch(r"(buy tickets|tickets|more info|details)",
+                                        text, re.I):
+                continue
+            name = re.sub(r"^(special event|late show|early show)\s*[:\-]\s*", "",
+                          text, flags=re.I).strip()
+            key = f"helium:{city}:{eid}"
+            if key in out:
+                continue
+            out[key] = {
+                "id": key,
+                "source": f"Helium Comedy ({city.title()})",
+                "title": text,
+                "url": f"{base}/events/{eid}",
+                "performer": re.split(r"\s+[-–—|]\s+", name)[0][:40].strip(),
+            }
+    return list(out.values())
+
+
+SOURCES = {
+    "how_to_academy_us": how_to_academy_us,
+    "the_wilbur": the_wilbur,
+    "helium": helium,
+}
 
 
 def performer_from(slug, title=""):
