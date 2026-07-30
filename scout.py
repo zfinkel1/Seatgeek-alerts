@@ -180,8 +180,10 @@ def the_wilbur():
 
 
 # Helium is a chain, so one parser covers every city it operates in.
-HELIUM_CITIES = ["philadelphia", "portland", "indianapolis", "buffalo",
-                 "stlouis", "cleveland"]
+# Verified-reachable subdomains only. "stlouis" and "cleveland" fail DNS -- if
+# those clubs exist they use different hostnames, and a dead entry costs a DNS
+# timeout on every run.
+HELIUM_CITIES = ["philadelphia", "portland", "indianapolis", "buffalo"]
 
 
 def helium(cities=None):
