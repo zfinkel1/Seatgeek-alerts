@@ -65,6 +65,13 @@ STATE_FILE = os.path.join(os.environ.get("RAILWAY_VOLUME_MOUNT_PATH", "."), "sta
 SHEET_CSV_URL = os.environ.get("SHEET_CSV_URL")   # published Google Sheet CSV url
 LOCAL_WATCHLIST = "watchlist.csv"
 
+# Keywords paused to save Scrapfly usage, applied regardless of watchlist source
+# (Google Sheet or local CSV) so you don't have to edit the Sheet. Case-insensitive
+# substring match against each row's url + label. Override/clear via PAUSE_MATCH env
+# (comma-separated; set PAUSE_MATCH="" to resume everything).
+PAUSE_MATCH = [s.strip().lower() for s in
+               os.environ.get("PAUSE_MATCH", "cubs").split(",") if s.strip()]
+
 _INTERVALS = {
     # Sub-5min tiers are EXPENSIVE (each check = a Scrapfly render, ~25 credits).
     # Reserve them for a hot event you're actively hunting — at 3min an event
@@ -335,6 +342,9 @@ def load_watchlist():
         if not row.get("url"):
             continue
         if row.get("active", "").lower() in ("no", "false", "0", "off"):
+            continue
+        hay = (row.get("url", "") + " " + row.get("label", "")).lower()
+        if any(tok in hay for tok in PAUSE_MATCH):
             continue
         rows.append(row)
     return rows
